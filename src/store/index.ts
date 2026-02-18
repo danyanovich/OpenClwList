@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { AppState, Task, Project, TaskStatus } from '@/types';
+import { generateId } from '@/lib/utils';
 
 export const useStore = create<AppState>()(
   persist(
@@ -14,7 +15,7 @@ export const useStore = create<AppState>()(
             ...state.tasks,
             {
               ...taskData,
-              id: `task-${Date.now()}`,
+              id: generateId(),
               createdAt: new Date().toISOString(),
               updatedAt: new Date().toISOString(),
             },
@@ -41,7 +42,7 @@ export const useStore = create<AppState>()(
             ...state.projects,
             {
               ...projectData,
-              id: `project-${Date.now()}`,
+              id: generateId(),
               createdAt: new Date().toISOString(),
             },
           ],

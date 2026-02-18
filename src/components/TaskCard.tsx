@@ -1,104 +1,109 @@
 'use client';
 
 import { useState } from 'react';
-import { Task, TaskStatus } from '@/types';
-import { getStatusLabel, getStatusColor } from '@/store';
-import { Edit2, Trash2, ExternalLink, MessageSquare } from 'lucide-react';
+import { Task } from '@/types';
+import { getStatusColor } from '@/store';
+import { formatDate } from '@/lib/utils';
+import { FeedbackInput } from './FeedbackInput';
+import { TaskModal } from './TaskModal';
+import { Edit2, Trash2, ExternalLink, ChevronDown, ChevronUp } from 'lucide-react';
 
 interface TaskCardProps {
   task: Task;
   onUpdate: (id: string, updates: Partial<Task>) => void;
   onDelete: (id: string) => void;
+  isDragging?: boolean;
 }
 
-export function TaskCard({ task, onUpdate, onDelete }: TaskCardProps) {
+export function TaskCard({ task, onUpdate, onDelete, isDragging }: TaskCardProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [feedback, setFeedback] = useState(task.feedback);
-
-  const handleStatusChange = (newStatus: TaskStatus) => {
-    onUpdate(task.id, { status: newStatus });
-  };
+  const [isEditing, setIsEditing] = useState(false);
 
   const handleFeedbackSave = () => {
     onUpdate(task.id, { feedback });
   };
 
   return (
-    <div className={`border-l-4 rounded-lg bg-white shadow-sm p-4 ${getStatusColor(task.status)}`}>
-      <div className="flex justify-between items-start mb-2">
-        <h3 className="font-semibold text-lg">{task.title}</h3>
-        <div className="flex gap-1">
-          <button
-            onClick={() => setIsExpanded(!isExpanded)}
-            className="p-1 hover:bg-gray-100 rounded"
-          >
-            <Edit2 className="w-4 h-4" />
-          </button>
-          <button
-            onClick={() => onDelete(task.id)}
-            className="p-1 hover:bg-red-100 rounded text-red-500"
-          >
-            <Trash2 className="w-4 h-4" />
-          </button>
-        </div>
-      </div>
-
-      <p className="text-gray-600 text-sm mb-2">{task.company}</p>
-
-      {task.link && (
-        <a
-          href={task.link}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-blue-500 text-sm flex items-center gap-1 hover:underline"
-        >
-          <ExternalLink className="w-3 h-3" />
-          Ссылка на вакансию
-        </a>
-      )}
-
-      {/* Status buttons */}
-      <div className="flex flex-wrap gap-1 mt-3">
-        {(['review', 'approved', 'sent', 'revision'] as TaskStatus[]).map((status) => (
-          <button
-            key={status}
-            onClick={() => handleStatusChange(status)}
-            className={`px-2 py-1 text-xs rounded ${
-              task.status === status
-                ? 'bg-gray-800 text-white'
-                : 'bg-gray-100 hover:bg-gray-200'
-            }`}
-          >
-            {getStatusLabel(status)}
-          </button>
-        ))}
-      </div>
-
-      {/* Expanded content */}
-      {isExpanded && (
-        <div className="mt-4 pt-4 border-t">
-          <p className="text-sm text-gray-700 whitespace-pre-wrap mb-3">{task.content}</p>
-          
-          <div className="mt-3">
-            <label className="text-sm font-medium flex items-center gap-1">
-              <MessageSquare className="w-4 h-4" />
-              Фитбек
-            </label>
-            <textarea
-              value={feedback}
-              onChange={(e) => setFeedback(e.target.value)}
-              onBlur={handleFeedbackSave}
-              placeholder="Напиши фитбек..."
-              className="w-full mt-1 p-2 border rounded text-sm"
-              rows={3}
-            />
+    <>
+      <div
+        className={`border-l-4 rounded-lg bg-white shadow-sm p-4 ${getStatusColor(task.status)} ${
+          isDragging ? 'shadow-lg rotate-1 opacity-90' : ''
+        }`}
+      >
+        <div className="flex justify-between items-start mb-1">
+          <h3 className="font-semibold text-sm leading-snug flex-1 mr-2">{task.title}</h3>
+          <div className="flex gap-1 shrink-0">
+            <button
+              onClick={() => setIsEditing(true)}
+              className="p-1 hover:bg-gray-100 rounded"
+              title="Редактировать"
+            >
+              <Edit2 className="w-3.5 h-3.5 text-gray-500" />
+            </button>
+            <button
+              onClick={() => onDelete(task.id)}
+              className="p-1 hover:bg-red-100 rounded"
+              title="Удалить"
+            >
+              <Trash2 className="w-3.5 h-3.5 text-red-500" />
+            </button>
+            <button
+              onClick={() => setIsExpanded(!isExpanded)}
+              className="p-1 hover:bg-gray-100 rounded"
+              title={isExpanded ? 'Свернуть' : 'Развернуть'}
+            >
+              {isExpanded
+                ? <ChevronUp className="w-3.5 h-3.5 text-gray-500" />
+                : <ChevronDown className="w-3.5 h-3.5 text-gray-500" />
+              }
+            </button>
           </div>
-
-          <p className="text-xs text-gray-400 mt-2">
-            Создано: {new Date(task.createdAt).toLocaleDateString('ru-RU')}
-          </p>
         </div>
+
+        <p className="text-gray-500 text-xs mb-2">{task.company}</p>
+
+        {task.link && (
+          <a
+            href={task.link}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-blue-500 text-xs flex items-center gap-1 hover:underline"
+          >
+            <ExternalLink className="w-3 h-3" />
+            Открыть ссылку
+          </a>
+        )}
+
+        {isExpanded && (
+          <div className="mt-3 pt-3 border-t">
+            {task.content && (
+              <p className="text-sm text-gray-700 whitespace-pre-wrap mb-3">{task.content}</p>
+            )}
+
+            <FeedbackInput
+              value={feedback}
+              onChange={setFeedback}
+              onSave={handleFeedbackSave}
+            />
+
+            <p className="text-xs text-gray-400 mt-2">
+              Создано: {formatDate(task.createdAt)}
+            </p>
+          </div>
+        )}
+      </div>
+
+      {isEditing && (
+        <TaskModal
+          task={task}
+          onSave={(data) => {
+            onUpdate(task.id, data);
+            setIsEditing(false);
+          }}
+          onClose={() => setIsEditing(false)}
+        />
       )}
-    </div>
+    </>
   );
 }
