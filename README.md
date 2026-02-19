@@ -1,83 +1,74 @@
-# ClawProject 🎯
+# clawproject / ops-ui
 
-**Управление задачами и проектами для OpenClaw AI-агентов**
+Express-based monitoring UI for OpenClaw Gateway.
 
-[![Next.js](https://img.shields.io/badge/Next.js-16-black)](https://nextjs.org/)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.0-blue)](https://www.typescriptlang.org/)
-[![Tailwind CSS](https://img.shields.io/badge/Tailwind-4.0-cyan)](https://tailwindcss.com/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-green)](LICENSE)
+## What it does
 
-## Описание
+- Connects to Gateway WebSocket stream (`CLAWDBOT_URL`)
+- Stores sessions/runs/events/exec snapshots in SQLite (`node:sqlite`)
+- Exposes REST + SSE APIs for monitor/timeline/diagnostics/tasks
+- Serves a lightweight web UI from `public/`
 
-ClawProject — система управления задачами для AI-агентов назе OpenClaw ба. Позволяет согласовывать контент, управлять задачами и отслеживать прогресс работы агентов в одном месте.
-
-## Возможности
-
-- 📋 **Канбан-доска** — 4 колонки: На проверке, Одобрено, Отправлено, На доработке
-- 📝 **Управление задачами** — создавай, редактируй, удаляй задачи
-- 💬 **Фитбек и комментарии** — оставляй обратную связь на каждую задачу
-- 💾 **Локальное хранение** — данные сохраняются в localStorage
-- 🎨 **Современный UI** — чистый дизайн на Tailwind CSS
-
-## Стек
-
-- **Frontend:** Next.js 16, React 19, TypeScript
-- **Styling:** Tailwind CSS v4
-- **State:** Zustand (с persist в localStorage)
-- **Icons:** Lucide React
-- **Drag & Drop:** @hello-pangea/dnd
-
-## Быстрый старт
-
-### Установка
+## Quickstart
 
 ```bash
-# Клонируем репозиторий
-git clone https://github.com/yourusername/clawproject.git
-cd clawproject
-
-# Устанавливаем зависимости
 npm install
-
-# Запускаем dev сервер
+cp .env.example .env.local
+# set CLAWDBOT_URL and token config (see below)
 npm run dev
 ```
 
-### Использование
+Open: `http://127.0.0.1:3010` (or your `HOST`/`PORT`).
 
-1. Открой http://localhost:3000
-2. Нажми "Добавить задачу"
-3. Заполни название, компанию, текст
-4. Назначь статус и оставь фитбек
-5. Данные сохранятся автоматически
+## Environment variables
 
-## Структура проекта
+- `PORT` (default: `3010`)
+- `HOST` (default: `0.0.0.0`)
+- `CLAWDBOT_URL` (default: `ws://127.0.0.1:18789`)
+- `CLAWDBOT_API_TOKEN` (optional, preferred explicit token)
+- `OPENCLAW_CONFIG_PATH` (optional path to OpenClaw config with `gateway.auth.token`)
+- `OPS_UI_DB_PATH` (optional SQLite path, default `./data/ops-ui.sqlite`)
+- `OPS_UI_MAX_QUEUE` (optional in-memory event queue cap, default `5000`)
 
+Token resolution order:
+1. `CLAWDBOT_API_TOKEN`
+2. `OPENCLAW_CONFIG_PATH` -> `gateway.auth.token`
+3. `~/.openclaw/openclaw.json` -> `gateway.auth.token`
+
+## API endpoints
+
+### Monitor
+- `GET /api/monitor/sessions`
+- `GET /api/monitor/runs`
+- `GET /api/monitor/runs/:runId/events`
+- `GET /api/monitor/graph?window=3600`
+- `GET /api/monitor/diagnostics`
+- `GET /api/monitor/events` (SSE)
+- `POST /api/monitor/connect`
+- `POST /api/monitor/disconnect`
+- `POST /api/monitor/refresh-sessions`
+- `POST /api/monitor/abort`
+
+### Tasks
+- `GET /api/tasks`
+- `POST /api/tasks/:id/status`
+
+## Background mode notes
+
+- Run detached with your preferred supervisor (`tmux`, `screen`, `pm2`, `systemd`, launchd).
+- Example with `nohup`:
+
+```bash
+nohup npm run start > ops-ui.log 2>&1 &
 ```
-clawproject/
-├── src/
-│   ├── app/           # Next.js App Router
-│   ├── components/     # React компоненты
-│   ├── store/          # Zustand store
-│   ├── types/          # TypeScript типы
-│   └── ...
-├── public/             # Статические файлы
-├── tailwind.config.ts  # Конфиг Tailwind
-└── package.json
+
+- Health checks:
+  - `curl http://127.0.0.1:3010/api/monitor/diagnostics`
+  - `curl http://127.0.0.1:3010/api/tasks`
+
+## Checks
+
+```bash
+npm run check
+npm run smoke
 ```
-
-## Roadmap
-
-- [ ] Интеграция с OpenClaw API
-- [ ] Real-time обновления (WebSocket)
-- [ ] Множественные проекты
-- [ ] Команды и права доступа
-- [ ] Экспорт/импорт данных
-
-## Лицензия
-
-MIT License — подробности в файле [LICENSE](LICENSE)
-
----
-
-**ClawProject** — сделано с ❤️ для OpenClaw AI Agents
