@@ -16,7 +16,8 @@
     "start": "node --import tsx src/server.ts",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
-    "check": "npm run typecheck && npm run lint"
+    "check": "npm run typecheck && npm run lint",
+    "smoke": "bash scripts/smoke.sh"
   },
   "dependencies": {
     "express": "^5.2.1",
