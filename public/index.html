@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Ops UI Monitor</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div>
+        <h1>Ops UI</h1>
+        <p class="muted">OpenClaw companion monitor (live + history + diagnostics)</p>
+      </div>
+      <div class="actions">
+        <button id="connectBtn">Connect</button>
+        <button id="disconnectBtn">Disconnect</button>
+        <button id="refreshBtn">Refresh Sessions</button>
+      </div>
+    </header>
+
+    <nav class="tabs">
+      <button data-tab="monitor" class="tab active">Monitor</button>
+      <button data-tab="timeline" class="tab">Timeline</button>
+      <button data-tab="tasks" class="tab">Tasks</button>
+      <button data-tab="diagnostics" class="tab">Diagnostics</button>
+    </nav>
+
+    <main>
+      <section id="monitor" class="tab-panel active">
+        <div class="panel">
+          <h2>Filters</h2>
+          <div class="row">
+            <label>Agent <input id="agentFilter" placeholder="main" /></label>
+            <label>Channel <input id="channelFilter" placeholder="discord" /></label>
+            <label>Status
+              <select id="statusFilter">
+                <option value="">all</option>
+                <option value="idle">idle</option>
+                <option value="active">active</option>
+                <option value="thinking">thinking</option>
+              </select>
+            </label>
+            <button id="applyFiltersBtn">Apply</button>
+          </div>
+        </div>
+
+        <div class="grid">
+          <div class="panel">
+            <h2>Sessions</h2>
+            <ul id="sessionsList" class="list"></ul>
+          </div>
+          <div class="panel">
+            <h2>Graph (Window: 1h)</h2>
+            <div id="graphView" class="graph"></div>
+          </div>
+          <div class="panel">
+            <h2>Run Detail</h2>
+            <div id="runDetail" class="detail">Select a run from graph/timeline.</div>
+            <div class="row">
+              <input id="abortSessionKey" placeholder="sessionKey" />
+              <input id="abortRunId" placeholder="runId (optional)" />
+              <button id="abortBtn">Abort</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="timeline" class="tab-panel">
+        <div class="panel">
+          <h2>Runs</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>Run</th>
+                <th>Session</th>
+                <th>State</th>
+                <th>Started</th>
+                <th>Ended</th>
+              </tr>
+            </thead>
+            <tbody id="runsTbody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="tasks" class="tab-panel">
+        <div class="panel">
+          <h2>Auto Tasks (from OpenClaw messages)</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>Task</th>
+                <th>Status</th>
+                <th>Session</th>
+                <th>Run</th>
+                <th>Created</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="tasksTbody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="diagnostics" class="tab-panel">
+        <div class="panel">
+          <h2>Diagnostics</h2>
+          <pre id="diagnosticsBox"></pre>
+        </div>
+        <div class="panel">
+          <h2>Recent Events</h2>
+          <pre id="recentEventsBox"></pre>
+        </div>
+      </section>
+    </main>
+
+    <script src="/app.js" type="module"></script>
+  </body>
+</html>
