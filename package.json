@@ -1,12 +1,22 @@
 {
-  "name": "ops-ui",
+  "name": "clawproject-ops-ui",
   "version": "0.1.0",
-  "private": true,
+  "description": "Express + SQLite operational monitor UI for OpenClaw Gateway",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/danyanovich/clawproject.git"
+  },
   "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
   "scripts": {
     "dev": "tsx src/server.ts",
     "start": "node --import tsx src/server.ts",
-    "check": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "check": "npm run typecheck && npm run lint"
   },
   "dependencies": {
     "express": "^5.2.1",
@@ -17,6 +27,7 @@
     "@types/express": "^5.0.5",
     "@types/node": "^24.3.0",
     "@types/ws": "^8.18.1",
+    "eslint": "^9.35.0",
     "tsx": "^4.20.3",
     "typescript": "^5.9.2"
   }
