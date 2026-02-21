@@ -524,3 +524,26 @@ export function updateAutoTaskStatusByRun(params: { runId: string; status: TaskS
   const result = updateTaskStatusByRunStmt.run(params.status, Date.now(), params.runId, params.status)
   return Number(result.changes ?? 0) > 0
 }
+
+// --- Task CRUD helpers ---
+
+const deleteTaskStmt = db.prepare(`DELETE FROM tasks WHERE id = ?`)
+
+export function deleteTask(id: string): boolean {
+  const result = deleteTaskStmt.run(id)
+  return Number(result.changes ?? 0) > 0
+}
+
+const updateTaskFieldsStmt = db.prepare(`
+UPDATE tasks SET title = ?, description = ?, updated_at = ? WHERE id = ?
+`)
+
+export function updateTaskFields(params: { id: string; title: string; description?: string }): boolean {
+  const result = updateTaskFieldsStmt.run(
+    params.title,
+    params.description ?? null,
+    Date.now(),
+    params.id,
+  )
+  return Number(result.changes ?? 0) > 0
+}

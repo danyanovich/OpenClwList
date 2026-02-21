@@ -5,7 +5,7 @@ import path from 'node:path'
 import express from 'express'
 import next from 'next'
 import JSON5 from 'json5'
-import { createTask, getGraph, getRecentEvents, getRunEvents, getRuns, getSessions, getTask, insertEvent, listTasks, updateAutoTaskStatusByRun, updateTaskSessionKey, updateTaskSourceRunId, updateTaskStatus, upsertAutoTaskForRun, upsertExec, upsertRun, upsertSession } from './db.js'
+import { createTask, deleteTask, getGraph, getRecentEvents, getRunEvents, getRuns, getSessions, getTask, insertEvent, listTasks, updateAutoTaskStatusByRun, updateTaskFields, updateTaskSessionKey, updateTaskSourceRunId, updateTaskStatus, upsertAutoTaskForRun, upsertExec, upsertRun, upsertSession } from './db.js'
 import { GatewayClient } from './gateway-client.js'
 import { inferSessionFromListRow, parseGatewayEvent } from './parser.js'
 import type { Diagnostics, MonitorEvent, ParsedEnvelope, TaskStatus } from './types.js'
@@ -674,6 +674,39 @@ app.post('/api/tasks', (req, res) => {
   })
   broadcastSse({ type: 'task_created', taskId: id, ts: Date.now() })
   res.json({ ok: true, taskId: id })
+})
+
+app.put('/api/tasks/:id', (req, res) => {
+  const body = (req.body && typeof req.body === 'object' ? req.body : {}) as {
+    title?: string
+    description?: string
+  }
+  const title = typeof body.title === 'string' ? body.title.trim() : ''
+  if (!title) {
+    res.status(400).json({ ok: false, error: 'title is required' })
+    return
+  }
+  const ok = updateTaskFields({
+    id: req.params.id,
+    title,
+    description: typeof body.description === 'string' ? body.description.trim() : undefined,
+  })
+  if (!ok) {
+    res.status(404).json({ ok: false, error: 'Task not found' })
+    return
+  }
+  broadcastSse({ type: 'task_updated', taskId: req.params.id, ts: Date.now() })
+  res.json({ ok: true })
+})
+
+app.delete('/api/tasks/:id', (req, res) => {
+  const ok = deleteTask(req.params.id)
+  if (!ok) {
+    res.status(404).json({ ok: false, error: 'Task not found' })
+    return
+  }
+  broadcastSse({ type: 'task_deleted', taskId: req.params.id, ts: Date.now() })
+  res.json({ ok: true })
 })
 
 const dev = process.env.NODE_ENV !== 'production'

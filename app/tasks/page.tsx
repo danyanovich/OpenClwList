@@ -1,7 +1,7 @@
 "use client"
 
-import { useEffect, useState } from "react"
-import { CheckCircle2, Circle, Clock, MoreHorizontal, Plus, Loader2, ListTodo, X, AlignLeft } from "lucide-react"
+import { useEffect, useState, useRef, useCallback } from "react"
+import { CheckCircle2, Circle, Clock, MoreHorizontal, Plus, Loader2, ListTodo, X, AlignLeft, Trash2, Pencil, Search } from "lucide-react"
 
 type TaskStatus = 'planned' | 'in_progress' | 'review' | 'done'
 
@@ -36,6 +36,11 @@ export default function TasksPage() {
     const [draggedTaskId, setDraggedTaskId] = useState<string | null>(null)
     const [dragOverColumn, setDragOverColumn] = useState<TaskStatus | null>(null)
     const [eventTrigger, setEventTrigger] = useState(0)
+    const [newTaskDesc, setNewTaskDesc] = useState("")
+    const [showDescField, setShowDescField] = useState(false)
+    const [editingTask, setEditingTask] = useState<{ id: string; title: string; description: string } | null>(null)
+    const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
+    const [searchQuery, setSearchQuery] = useState("")
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const [selectedTaskEvents, setSelectedTaskEvents] = useState<any[] | null>(null)
@@ -94,7 +99,7 @@ export default function TasksPage() {
                 const data = JSON.parse(e.data)
 
                 // If a task changed status, auto-generated a title, or was created
-                if (data.type === 'task_updated' || data.type === 'task_created') {
+                if (data.type === 'task_updated' || data.type === 'task_created' || data.type === 'task_deleted') {
                     loadTasks()
                 }
 
@@ -194,10 +199,12 @@ export default function TasksPage() {
             const res = await fetch('/api/tasks', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ title: newTaskTitle, sessionKey: newTaskSessionKey })
+                body: JSON.stringify({ title: newTaskTitle, description: newTaskDesc.trim() || undefined, sessionKey: newTaskSessionKey })
             })
             if (res.ok) {
                 setNewTaskTitle("")
+                setNewTaskDesc("")
+                setShowDescField(false)
                 loadTasks()
             }
         } catch (err) {
@@ -237,6 +244,43 @@ export default function TasksPage() {
             loadTasks()
         }
     }
+
+    const handleDeleteTask = async (id: string) => {
+        try {
+            const res = await fetch(`/api/tasks/${id}`, { method: 'DELETE' })
+            if (res.ok) {
+                setTasks(prev => prev.filter(t => t.id !== id))
+                if (selectedTask?.id === id) setSelectedTask(null)
+            }
+        } catch (err) {
+            console.error(err)
+        }
+        setConfirmDelete(null)
+    }
+
+    const handleEditTask = async () => {
+        if (!editingTask || !editingTask.title.trim()) return
+        try {
+            const res = await fetch(`/api/tasks/${editingTask.id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ title: editingTask.title.trim(), description: editingTask.description.trim() || undefined })
+            })
+            if (res.ok) {
+                loadTasks()
+                if (selectedTask?.id === editingTask.id) {
+                    setSelectedTask(prev => prev ? { ...prev, title: editingTask.title.trim(), description: editingTask.description.trim() } : null)
+                }
+                setEditingTask(null)
+            }
+        } catch (err) {
+            console.error(err)
+        }
+    }
+
+    const filteredTasks = searchQuery.trim()
+        ? tasks.filter(t => t.title.toLowerCase().includes(searchQuery.toLowerCase()) || t.description?.toLowerCase().includes(searchQuery.toLowerCase()))
+        : tasks
 
     return (
         <div className="min-h-screen bg-[#070709] text-white p-6 md:p-12 font-sans relative overflow-x-hidden">
