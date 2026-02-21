@@ -69,7 +69,7 @@ export type Diagnostics = {
   lastDisconnectAt?: number
 }
 
-export type TaskStatus = 'todo' | 'in_progress' | 'done'
+export type TaskStatus = 'planned' | 'in_progress' | 'review' | 'done'
 
 export type TaskItem = {
   id: string

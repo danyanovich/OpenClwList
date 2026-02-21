@@ -109,6 +109,101 @@ pre {
   overflow: auto;
   font-size: 12px;
 }
+/* Kanban */
+.kanban-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+.kanban-header h2 { margin: 0; }
+
+.task-create-form {
+  background: #0d1117;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  padding: 12px;
+  margin-bottom: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.task-create-form input,
+.task-create-form textarea {
+  margin-left: 0;
+  width: 100%;
+  font-family: inherit;
+  font-size: 13px;
+  resize: vertical;
+}
+.task-form-actions { display: flex; gap: 8px; }
+button.secondary { color: var(--muted); }
+
+.kanban-board {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+  align-items: flex-start;
+}
+.kanban-col {
+  background: #0d1117;
+  border: 1px solid #30363d;
+  border-radius: 8px;
+  padding: 10px;
+  min-height: 120px;
+  transition: outline 0.1s;
+}
+.kanban-col.dragover {
+  outline: 2px solid var(--accent);
+}
+.kanban-col-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+  font-size: 11px;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 600;
+  letter-spacing: 0.05em;
+}
+.col-count {
+  background: #21262d;
+  border-radius: 10px;
+  padding: 1px 6px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.kanban-card {
+  background: var(--panel);
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  padding: 8px 10px;
+  margin-bottom: 8px;
+  cursor: grab;
+  font-size: 12px;
+  user-select: none;
+}
+.kanban-card:hover { border-color: #58a6ff; }
+.kanban-card.dragging { opacity: 0.35; cursor: grabbing; }
+.card-title { font-weight: 600; margin-bottom: 3px; word-break: break-word; }
+.badge {
+  display: inline-block;
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  margin-left: 4px;
+  vertical-align: middle;
+}
+.badge-auto { background: #21262d; color: var(--muted); }
+.badge-manual { background: #1b2a4a; color: #79c0ff; }
+
+.kanban-cards { min-height: 40px; }
+
 @media (max-width: 980px) {
   .grid { grid-template-columns: 1fr; }
+  .kanban-board { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 600px) {
+  .kanban-board { grid-template-columns: 1fr; }
 }

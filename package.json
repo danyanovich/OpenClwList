@@ -12,7 +12,7 @@
     "node": ">=24"
   },
   "scripts": {
-    "dev": "tsx src/server.ts",
+    "dev": "tsx watch src/server.ts",
     "start": "node --import tsx src/server.ts",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
@@ -20,15 +20,26 @@
     "smoke": "bash scripts/smoke.sh"
   },
   "dependencies": {
+    "clsx": "^2.1.1",
     "express": "^5.2.1",
     "json5": "^2.2.3",
+    "lucide-react": "^0.575.0",
+    "next": "^16.1.6",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "tailwind-merge": "^3.5.0",
     "ws": "^8.19.0"
   },
   "devDependencies": {
+    "@tailwindcss/postcss": "^4.2.0",
     "@types/express": "^5.0.5",
     "@types/node": "^24.3.0",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
     "@types/ws": "^8.18.1",
     "eslint": "^9.35.0",
+    "postcss": "^8.5.6",
+    "tailwindcss": "^4.2.0",
     "tsx": "^4.20.3",
     "typescript": "^5.9.2"
   }
