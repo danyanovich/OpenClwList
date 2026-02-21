@@ -1,7 +1,9 @@
 "use client"
 
 import { useEffect, useState, useRef, useCallback } from "react"
-import { CheckCircle2, Circle, Clock, MoreHorizontal, Plus, Loader2, ListTodo, X, AlignLeft, Trash2, Pencil, Search } from "lucide-react"
+import { CheckCircle2, Circle, Clock, MoreHorizontal, Plus, Loader2, ListTodo, X, AlignLeft, Trash2, Pencil, Search, Wifi, WifiOff } from "lucide-react"
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 
 type TaskStatus = 'planned' | 'in_progress' | 'review' | 'done'
 
@@ -41,6 +43,7 @@ export default function TasksPage() {
     const [editingTask, setEditingTask] = useState<{ id: string; title: string; description: string } | null>(null)
     const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
     const [searchQuery, setSearchQuery] = useState("")
+    const [connected, setConnected] = useState(true)
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const [selectedTaskEvents, setSelectedTaskEvents] = useState<any[] | null>(null)
@@ -93,24 +96,35 @@ export default function TasksPage() {
     useEffect(() => {
         loadTasks()
 
-        const es = new EventSource('/api/monitor/events')
-        es.onmessage = (e) => {
-            try {
-                const data = JSON.parse(e.data)
+        let es: EventSource
+        let reconnectTimer: ReturnType<typeof setTimeout>
 
-                // If a task changed status, auto-generated a title, or was created
-                if (data.type === 'task_updated' || data.type === 'task_created' || data.type === 'task_deleted') {
-                    loadTasks()
-                }
-
-                // If this is an agent event (stream chunk, new event, etc.)
-                if (data.type === 'event' || data.type === 'event_created' || data.runId) {
-                    setEventTrigger(prev => prev + 1)
-                }
-            } catch (err) { }
+        function connect() {
+            es = new EventSource('/api/monitor/events')
+            es.onopen = () => setConnected(true)
+            es.onmessage = (e) => {
+                try {
+                    const data = JSON.parse(e.data)
+                    if (data.type === 'task_updated' || data.type === 'task_created' || data.type === 'task_deleted') {
+                        loadTasks()
+                    }
+                    if (data.type === 'event' || data.type === 'event_created' || data.runId) {
+                        setEventTrigger(prev => prev + 1)
+                    }
+                } catch (err) { }
+            }
+            es.onerror = () => {
+                setConnected(false)
+                es.close()
+                reconnectTimer = setTimeout(connect, 3000)
+            }
         }
+        connect()
 
-        return () => es.close()
+        return () => {
+            es?.close()
+            clearTimeout(reconnectTimer)
+        }
     }, [])
 
     // Keep track of the last loaded run ID to avoid flicker when just updating events
@@ -293,7 +307,13 @@ export default function TasksPage() {
                             <ListTodo className="w-8 h-8 text-indigo-400" />
                             Kanban Board
                         </h1>
-                        <p className="text-slate-400 text-lg">Manage OpenClaw tasks and agent runs visually.</p>
+                        <p className="text-slate-400 text-lg flex items-center gap-2">
+                            Manage OpenClaw tasks and agent runs visually.
+                            <span className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full ${connected ? 'text-green-400 bg-green-500/10' : 'text-red-400 bg-red-500/10 animate-pulse'}`}>
+                                {connected ? <Wifi className="w-3 h-3" /> : <WifiOff className="w-3 h-3" />}
+                                {connected ? 'Live' : 'Reconnecting...'}
+                            </span>
+                        </p>
                     </div>
                     <div className="flex items-center gap-4 w-full md:w-auto">
                         <form onSubmit={handleCreateTask} className="flex flex-col sm:flex-row gap-2 flex-1 md:w-[480px]">
@@ -327,11 +347,38 @@ export default function TasksPage() {
                                 ))}
                             </select>
                         </form>
+                        <button
+                            onClick={() => setShowDescField(!showDescField)}
+                            className="px-3 py-2.5 bg-white/5 hover:bg-white/10 rounded-full text-xs font-medium transition-colors border border-white/10 whitespace-nowrap hidden sm:flex items-center gap-1 text-gray-400 hover:text-white"
+                            title="Add description to new task"
+                        >
+                            <AlignLeft className="w-3 h-3" /> Desc
+                        </button>
                         <a href="/agents" className="px-5 py-2.5 bg-white/5 hover:bg-white/10 rounded-full text-sm font-medium transition-colors border border-white/10 whitespace-nowrap hidden sm:block">
                             &larr; Agents
                         </a>
                     </div>
+                    {showDescField && (
+                        <textarea
+                            value={newTaskDesc}
+                            onChange={(e) => setNewTaskDesc(e.target.value)}
+                            placeholder="Task description (optional)..."
+                            rows={2}
+                            className="w-full bg-white/5 border border-white/10 rounded-2xl py-2.5 px-5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500/50 shadow-inner resize-none"
+                        />
+                    )}
                 </header>
+
+                <div className="mb-4 relative">
+                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+                    <input
+                        type="text"
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        placeholder="Search tasks..."
+                        className="w-full bg-white/5 border border-white/10 rounded-full py-2 pl-10 pr-4 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500/50"
+                    />
+                </div>
 
                 {loading && tasks.length === 0 ? (
                     <div className="flex justify-center py-20 flex-1">
@@ -340,7 +387,7 @@ export default function TasksPage() {
                 ) : (
                     <div className="flex flex-col md:flex-row gap-6 items-start overflow-x-auto pb-4 custom-scrollbar snap-x flex-1">
                         {STATUSES.map(column => {
-                            const columnTasks = tasks.filter(t => t.status === column.id)
+                            const columnTasks = filteredTasks.filter(t => t.status === column.id)
 
                             return (
                                 <div
@@ -454,9 +501,25 @@ export default function TasksPage() {
                                     )}
                                 </div>
                             </div>
-                            <button onClick={() => setSelectedTask(null)} className="p-2 bg-white/5 hover:bg-white/10 rounded-full transition-colors text-gray-400 hover:text-white shrink-0">
-                                <X className="w-5 h-5" />
-                            </button>
+                            <div className="flex items-center gap-2 shrink-0">
+                                <button
+                                    onClick={() => setEditingTask({ id: selectedTask.id, title: selectedTask.title, description: selectedTask.description || '' })}
+                                    className="p-2 bg-white/5 hover:bg-white/10 rounded-full transition-colors text-gray-400 hover:text-indigo-400"
+                                    title="Edit task"
+                                >
+                                    <Pencil className="w-4 h-4" />
+                                </button>
+                                <button
+                                    onClick={() => setConfirmDelete(selectedTask.id)}
+                                    className="p-2 bg-white/5 hover:bg-red-500/20 rounded-full transition-colors text-gray-400 hover:text-red-400"
+                                    title="Delete task"
+                                >
+                                    <Trash2 className="w-4 h-4" />
+                                </button>
+                                <button onClick={() => setSelectedTask(null)} className="p-2 bg-white/5 hover:bg-white/10 rounded-full transition-colors text-gray-400 hover:text-white">
+                                    <X className="w-5 h-5" />
+                                </button>
+                            </div>
                         </div>
 
                         <div className="p-6 select-text overflow-y-auto flex-1 text-sm custom-scrollbar bg-black/20">
@@ -513,8 +576,8 @@ export default function TasksPage() {
                                                                 {new Date(evt.ts).toLocaleTimeString()}
                                                             </span>
                                                         </div>
-                                                        <div className="text-gray-300 whitespace-pre-wrap leading-relaxed text-[13px] font-mono">
-                                                            {text}
+                                                        <div className="text-gray-300 leading-relaxed text-[13px] prose prose-invert prose-sm max-w-none prose-pre:bg-black/30 prose-pre:border prose-pre:border-white/10 prose-pre:rounded-xl prose-code:text-indigo-300 prose-a:text-indigo-400">
+                                                            <ReactMarkdown remarkPlugins={[remarkGfm]}>{text}</ReactMarkdown>
                                                         </div>
                                                     </div>
                                                 )
@@ -563,6 +626,54 @@ export default function TasksPage() {
                                     ))}
                                 </div>
                             </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+            {/* Confirm Delete Dialog */}
+            {confirmDelete && (
+                <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm" onClick={(e) => { if (e.target === e.currentTarget) setConfirmDelete(null) }}>
+                    <div className="bg-[#1a1a22] border border-red-500/20 rounded-2xl p-6 max-w-sm w-full shadow-2xl">
+                        <h3 className="text-lg font-bold text-white mb-2">Delete Task?</h3>
+                        <p className="text-gray-400 text-sm mb-6">This action cannot be undone. The task and all its data will be permanently removed.</p>
+                        <div className="flex gap-3 justify-end">
+                            <button onClick={() => setConfirmDelete(null)} className="px-4 py-2 bg-white/5 hover:bg-white/10 rounded-xl text-sm font-medium text-gray-300 border border-white/10 transition-colors">Cancel</button>
+                            <button onClick={() => handleDeleteTask(confirmDelete)} className="px-4 py-2 bg-red-500/20 hover:bg-red-500/30 rounded-xl text-sm font-bold text-red-400 border border-red-500/20 transition-colors">Delete</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Edit Task Dialog */}
+            {editingTask && (
+                <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm" onClick={(e) => { if (e.target === e.currentTarget) setEditingTask(null) }}>
+                    <div className="bg-[#1a1a22] border border-white/10 rounded-2xl p-6 max-w-lg w-full shadow-2xl">
+                        <h3 className="text-lg font-bold text-white mb-4">Edit Task</h3>
+                        <div className="space-y-4">
+                            <div>
+                                <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Title</label>
+                                <input
+                                    type="text"
+                                    value={editingTask.title}
+                                    onChange={(e) => setEditingTask({ ...editingTask, title: e.target.value })}
+                                    className="w-full bg-white/5 border border-white/10 rounded-xl py-2.5 px-4 text-sm text-white focus:outline-none focus:border-indigo-500/50"
+                                    autoFocus
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Description</label>
+                                <textarea
+                                    value={editingTask.description}
+                                    onChange={(e) => setEditingTask({ ...editingTask, description: e.target.value })}
+                                    rows={4}
+                                    className="w-full bg-white/5 border border-white/10 rounded-xl py-2.5 px-4 text-sm text-white focus:outline-none focus:border-indigo-500/50 resize-none"
+                                    placeholder="Task description..."
+                                />
+                            </div>
+                        </div>
+                        <div className="flex gap-3 justify-end mt-6">
+                            <button onClick={() => setEditingTask(null)} className="px-4 py-2 bg-white/5 hover:bg-white/10 rounded-xl text-sm font-medium text-gray-300 border border-white/10 transition-colors">Cancel</button>
+                            <button onClick={handleEditTask} disabled={!editingTask.title.trim()} className="px-4 py-2 bg-indigo-500/20 hover:bg-indigo-500/30 disabled:opacity-50 rounded-xl text-sm font-bold text-indigo-400 border border-indigo-500/20 transition-colors">Save Changes</button>
                         </div>
                     </div>
                 </div>
