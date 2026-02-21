@@ -13,7 +13,8 @@
   },
   "scripts": {
     "dev": "tsx watch src/server.ts",
-    "start": "node --import tsx src/server.ts",
+    "build": "next build",
+    "start": "NODE_ENV=production node --import tsx src/server.ts",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "check": "npm run typecheck && npm run lint",
