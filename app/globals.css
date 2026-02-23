@@ -1,10 +1,123 @@
 @import "tailwindcss";
 @plugin "@tailwindcss/typography";
 
-@theme {
-  --font-inter: "Inter", sans-serif;
+/* ── Light mode (default) ── */
+:root,
+[data-theme="light"] {
+  --clr-bg:           #faf8f5;
+  --clr-panel:        #ffffff;
+  --clr-well:         #f0ede8;
+  --clr-field:        #f4f1ec;
+
+  --clr-rim:          rgba(0, 0, 0, 0.08);
+  --clr-rim-hi:       rgba(0, 0, 0, 0.16);
+
+  --clr-ink:          #1a1814;
+  --clr-dim:          #6b6560;
+  --clr-mute:         #a09890;
+
+  --clr-accent:       #e86a5a;
+  --clr-accent-hover: #d45a4a;
+  --clr-accent-dim:   rgba(232, 106, 90, 0.10);
+
+  --clr-ok:           #3d9e6e;
+  --clr-ok-dim:       rgba(61, 158, 110, 0.10);
+  --clr-warn:         #c47d1a;
+  --clr-warn-dim:     rgba(196, 125, 26, 0.10);
+  --clr-info:         #3d72c4;
+  --clr-info-dim:     rgba(61, 114, 196, 0.10);
+  --clr-err:          #c43d2a;
+  --clr-err-dim:      rgba(196, 61, 42, 0.10);
 }
 
+/* ── Dark mode ── */
+[data-theme="dark"] {
+  --clr-bg:           #13121a;
+  --clr-panel:        #1c1b25;
+  --clr-well:         #201f2e;
+  --clr-field:        #1e1d2a;
+
+  --clr-rim:          rgba(255, 255, 255, 0.07);
+  --clr-rim-hi:       rgba(255, 255, 255, 0.14);
+
+  --clr-ink:          #e8e6f0;
+  --clr-dim:          #8f8da0;
+  --clr-mute:         #5c5a6e;
+
+  --clr-accent:       #f07a6a;
+  --clr-accent-hover: #e86a5a;
+  --clr-accent-dim:   rgba(240, 122, 106, 0.12);
+
+  --clr-ok:           #5bc499;
+  --clr-ok-dim:       rgba(91, 196, 153, 0.12);
+  --clr-warn:         #f0b55a;
+  --clr-warn-dim:     rgba(240, 181, 90, 0.12);
+  --clr-info:         #6a9ff0;
+  --clr-info-dim:     rgba(106, 159, 240, 0.12);
+  --clr-err:          #f07060;
+  --clr-err-dim:      rgba(240, 112, 96, 0.12);
+}
+
+/* ── Tailwind v4 design tokens ── */
+@theme {
+  --font-inter: "Inter", sans-serif;
+
+  --color-surface:      var(--clr-bg);
+  --color-panel:        var(--clr-panel);
+  --color-well:         var(--clr-well);
+  --color-field:        var(--clr-field);
+
+  --color-rim:          var(--clr-rim);
+  --color-rim-hi:       var(--clr-rim-hi);
+
+  --color-ink:          var(--clr-ink);
+  --color-dim:          var(--clr-dim);
+  --color-mute:         var(--clr-mute);
+
+  --color-accent:       var(--clr-accent);
+  --color-accent-hover: var(--clr-accent-hover);
+  --color-accent-dim:   var(--clr-accent-dim);
+
+  --color-ok:           var(--clr-ok);
+  --color-ok-dim:       var(--clr-ok-dim);
+  --color-warn:         var(--clr-warn);
+  --color-warn-dim:     var(--clr-warn-dim);
+  --color-info:         var(--clr-info);
+  --color-info-dim:     var(--clr-info-dim);
+  --color-err:          var(--clr-err);
+  --color-err-dim:      var(--clr-err-dim);
+}
+
+/* ── Smooth theme transitions (color-related only) ── */
+*,
+*::before,
+*::after {
+  transition:
+    background-color 200ms ease,
+    color 200ms ease,
+    border-color 200ms ease,
+    box-shadow 200ms ease;
+}
+
+/* ── Prose theming ── */
+[data-theme="dark"] .prose {
+  --tw-prose-body: var(--clr-ink);
+  --tw-prose-headings: var(--clr-ink);
+  --tw-prose-links: var(--clr-accent);
+  --tw-prose-bold: var(--clr-ink);
+  --tw-prose-code: var(--clr-accent);
+  --tw-prose-pre-bg: rgba(0, 0, 0, 0.3);
+  --tw-prose-counters: var(--clr-dim);
+  --tw-prose-bullets: var(--clr-mute);
+  --tw-prose-hr: var(--clr-rim);
+  --tw-prose-quotes: var(--clr-dim);
+  --tw-prose-quote-borders: var(--clr-rim-hi);
+  --tw-prose-captions: var(--clr-mute);
+  --tw-prose-th-borders: var(--clr-rim-hi);
+  --tw-prose-td-borders: var(--clr-rim);
+}
+
+/* ── Custom scrollbar (theme-aware) ── */
 @layer utilities {
   .custom-scrollbar::-webkit-scrollbar {
     width: 4px;
@@ -16,11 +129,11 @@
   }
 
   .custom-scrollbar::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.1);
+    background: var(--clr-rim-hi);
     border-radius: 4px;
   }
 
   .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-    background: rgba(255, 255, 255, 0.2);
+    background: var(--clr-mute);
   }
 }

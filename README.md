@@ -1,74 +1,193 @@
-# clawproject / ops-ui
+# OpenClwList &nbsp;·&nbsp; `v0.01`
 
-Express-based monitoring UI for OpenClaw Gateway.
+> **Operational monitor UI for OpenClaw Gateway** — a soft, fast, bilingual (EN/RU) dashboard for managing agent fleets, tasks, schedules, and usage analytics.
 
-## What it does
+---
 
-- Connects to Gateway WebSocket stream (`CLAWDBOT_URL`)
-- Stores sessions/runs/events/exec snapshots in SQLite (`node:sqlite`)
-- Exposes REST + SSE APIs for monitor/timeline/diagnostics/tasks
-- Serves a lightweight web UI from `public/`
+## Overview
+
+OpenClwList is a self-hosted web interface that connects to a running [OpenClaw Gateway](https://github.com/danyanovich/clawproject) instance via WebSocket and gives you a real-time operational window into your AI agent fleet.
+
+```
+OpenClaw Gateway  ──ws──►  OpenClwList Backend (Express + SQLite)
+                                     │
+                          ┌──────────┴──────────┐
+                     Next.js UI             REST + SSE API
+                  (5 pages, SSR-free)       /api/monitor/*
+                                            /api/tasks
+                                            /api/schedules
+                                            /api/analytics
+```
+
+**Stack:** Node 24 · Express 5 · Next.js 16 · React 19 · Tailwind v4 · SQLite (`node:sqlite`) · TypeScript
+
+---
+
+## Features
+
+| Module | Description |
+|---|---|
+| **Dashboard** | Live connection badge, task summary counters, active sessions |
+| **Kanban Board** | Drag-and-drop task management with 5 columns: Planned → In Progress → Waiting Approval → Review → Done |
+| **Agent Nexus** | Fleet view of all active agents and sub-agents with export (clipboard / file / ZIP) |
+| **Cron Jobs** | Create and manage scheduled agent tasks with cron expressions |
+| **Cost Intelligence** | Token usage and cost analytics by agent, with 7/30/90-day filters |
+
+**UX highlights:**
+- Light / dark theme — defaults to OS `prefers-color-scheme`, with a soft manual toggle
+- EN / RU interface — language persists in `localStorage`
+- Real-time updates via SSE with auto-reconnect
+- Soft cream (light) and soft navy-purple (dark) palette — easy on the eyes
+
+---
 
 ## Quickstart
 
 ```bash
+# 1. Clone and install
+git clone https://github.com/danyanovich/clawproject.git
+cd OpenClwList
 npm install
+
+# 2. Configure
 cp .env.example .env.local
-# set CLAWDBOT_URL and token config (see below)
+# Edit .env.local — set CLAWDBOT_URL to your gateway address
+
+# 3. Run in development
 npm run dev
 ```
 
-Open: `http://127.0.0.1:3010` (or your `HOST`/`PORT`).
+Open **`http://127.0.0.1:3010`**
 
-## Environment variables
+---
 
-- `PORT` (default: `3010`)
-- `HOST` (default: `0.0.0.0`)
-- `CLAWDBOT_URL` (default: `ws://127.0.0.1:18789`)
-- `CLAWDBOT_API_TOKEN` (optional, preferred explicit token)
-- `OPENCLAW_CONFIG_PATH` (optional path to OpenClaw config with `gateway.auth.token`)
-- `OPS_UI_DB_PATH` (optional SQLite path, default `./data/ops-ui.sqlite`)
-- `OPS_UI_MAX_QUEUE` (optional in-memory event queue cap, default `5000`)
+## Environment Variables
 
-Token resolution order:
-1. `CLAWDBOT_API_TOKEN`
-2. `OPENCLAW_CONFIG_PATH` -> `gateway.auth.token`
-3. `~/.openclaw/openclaw.json` -> `gateway.auth.token`
+| Variable | Default | Description |
+|---|---|---|
+| `PORT` | `3010` | HTTP server port |
+| `HOST` | `0.0.0.0` | Bind address |
+| `CLAWDBOT_URL` | `ws://127.0.0.1:18789` | OpenClaw Gateway WebSocket URL |
+| `CLAWDBOT_API_TOKEN` | — | Explicit auth token (preferred) |
+| `OPENCLAW_CONFIG_PATH` | — | Path to OpenClaw config file |
+| `OPS_UI_DB_PATH` | `./data/ops-ui.sqlite` | SQLite database path |
+| `OPS_UI_MAX_QUEUE` | `5000` | In-memory event queue cap |
 
-## API endpoints
+**Token resolution order:**
+1. `CLAWDBOT_API_TOKEN` env var
+2. `OPENCLAW_CONFIG_PATH` → `gateway.auth.token`
+3. `~/.openclaw/openclaw.json` → `gateway.auth.token`
+
+---
+
+## API Reference
 
 ### Monitor
-- `GET /api/monitor/sessions`
-- `GET /api/monitor/runs`
-- `GET /api/monitor/runs/:runId/events`
-- `GET /api/monitor/graph?window=3600`
-- `GET /api/monitor/diagnostics`
-- `GET /api/monitor/events` (SSE)
-- `POST /api/monitor/connect`
-- `POST /api/monitor/disconnect`
-- `POST /api/monitor/refresh-sessions`
-- `POST /api/monitor/abort`
+```
+GET  /api/monitor/sessions              Active agent sessions
+GET  /api/monitor/runs                  All runs
+GET  /api/monitor/runs/:runId/events    Events for a run
+GET  /api/monitor/graph?window=3600     Activity graph
+GET  /api/monitor/diagnostics           Health & diagnostics
+GET  /api/monitor/events                SSE live event stream
+POST /api/monitor/connect               Connect to gateway
+POST /api/monitor/disconnect            Disconnect from gateway
+POST /api/monitor/refresh-sessions      Force session refresh
+POST /api/monitor/abort                 Abort active run
+```
 
 ### Tasks
-- `GET /api/tasks`
-- `POST /api/tasks/:id/status`
-
-## Background mode notes
-
-- Run detached with your preferred supervisor (`tmux`, `screen`, `pm2`, `systemd`, launchd).
-- Example with `nohup`:
-
-```bash
-nohup npm run start > ops-ui.log 2>&1 &
+```
+GET    /api/tasks                  List all tasks
+POST   /api/tasks                  Create task
+PUT    /api/tasks/:id              Update task title/description
+DELETE /api/tasks/:id              Delete task
+POST   /api/tasks/:id/status       Move task to new status (triggers dispatch)
+POST   /api/tasks/:id/approval     Approve or reject a waiting-approval task
+PUT    /api/tasks/:id/tags         Update task tags
 ```
 
-- Health checks:
-  - `curl http://127.0.0.1:3010/api/monitor/diagnostics`
-  - `curl http://127.0.0.1:3010/api/tasks`
+### Schedules
+```
+GET    /api/schedules              List schedules
+POST   /api/schedules              Create schedule
+DELETE /api/schedules/:id          Delete schedule
+```
 
-## Checks
+### Analytics
+```
+GET  /api/analytics?days=30        Usage data (7 / 30 / 90 days)
+```
+
+---
+
+## Production Deployment
 
 ```bash
-npm run check
-npm run smoke
+npm run build
+npm run start
 ```
+
+Or with a process supervisor:
+
+```bash
+# tmux
+tmux new-session -d -s openclaw 'npm run start'
+
+# nohup
+nohup npm run start > openclaw.log 2>&1 &
+
+# pm2
+pm2 start npm --name openclaw -- run start
+```
+
+**Health checks:**
+```bash
+curl http://127.0.0.1:3010/api/monitor/diagnostics
+curl http://127.0.0.1:3010/api/tasks
+```
+
+---
+
+## Development
+
+```bash
+npm run dev        # Start dev server with hot reload
+npm run typecheck  # TypeScript check
+npm run lint       # ESLint
+npm run check      # typecheck + lint
+npm run smoke      # Startup health check script
+```
+
+---
+
+## Project Structure
+
+```
+OpenClwList/
+├── app/                    # Next.js App Router pages
+│   ├── page.tsx            # Dashboard
+│   ├── tasks/page.tsx      # Kanban Board
+│   ├── agents/page.tsx     # Agent Nexus
+│   ├── schedules/page.tsx  # Cron Jobs
+│   ├── analytics/page.tsx  # Cost Intelligence
+│   ├── components/         # ThemeToggle, LanguageToggle
+│   └── i18n/               # Translations (EN/RU) + context
+├── src/
+│   ├── server.ts           # Express + Next.js server
+│   ├── db.ts               # SQLite schema + queries
+│   └── types.ts            # Shared TypeScript types
+└── data/                   # SQLite database (gitignored)
+```
+
+---
+
+## License
+
+MIT — see [LICENSE](LICENSE)
+
+---
+
+<p align="center">
+  <strong>OpenClwList</strong> &nbsp;·&nbsp; Built for the OpenClaw ecosystem
+</p>

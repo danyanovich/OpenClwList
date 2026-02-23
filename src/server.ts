@@ -5,7 +5,10 @@ import path from 'node:path'
 import express from 'express'
 import next from 'next'
 import JSON5 from 'json5'
-import { createTask, deleteTask, getGraph, getRecentEvents, getRunEvents, getRuns, getSessions, getTask, insertEvent, listTasks, updateAutoTaskStatusByRun, updateTaskFields, updateTaskSessionKey, updateTaskSourceRunId, updateTaskStatus, upsertAutoTaskForRun, upsertExec, upsertRun, upsertSession } from './db.js'
+import { createTask, deleteTask, getGraph, getRecentEvents, getRunEvents, getRuns, getSessions, getTask, insertEvent, listTasks, updateAutoTaskStatusByRun, updateTaskFields, updateTaskSessionKey, updateTaskSourceRunId, updateTaskStatus, updateTaskTags, upsertAutoTaskForRun, upsertExec, upsertRun, upsertSession, getAnalytics, listSchedules, createSchedule, deleteSchedule, updateScheduleLastRun } from './db.js'
+import { createRequire } from 'module'
+const require = createRequire(import.meta.url)
+const cronParser = require('cron-parser')
 import { GatewayClient } from './gateway-client.js'
 import { inferSessionFromListRow, parseGatewayEvent } from './parser.js'
 import type { Diagnostics, MonitorEvent, ParsedEnvelope, TaskStatus } from './types.js'
@@ -45,8 +48,54 @@ const TOKEN_DETECTION = detectGatewayToken()
 const GATEWAY_TOKEN = TOKEN_DETECTION.token
 
 const app = express()
-app.use(express.json({ limit: '1mb' }))
+app.use(express.json({ limit: '256kb' }))
+
+// --- Security Headers ---
+app.use((_req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff')
+  res.setHeader('X-Frame-Options', 'DENY')
+  res.setHeader('X-XSS-Protection', '1; mode=block')
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin')
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()')
+  next()
+})
+
+// --- Rate Limiting (simple in-memory per IP) ---
+const rateLimitMap = new Map<string, { count: number; resetAt: number }>()
+const RATE_LIMIT_WINDOW_MS = 60_000
+const RATE_LIMIT_MAX = 300 // max requests per minute per IP
+
+app.use((req, res, next) => {
+  // Skip rate limiting for SSE and static assets
+  if (req.path === '/api/monitor/events' || !req.path.startsWith('/api/')) {
+    return next()
+  }
+  const ip = req.ip || req.socket.remoteAddress || 'unknown'
+  const now = Date.now()
+  let entry = rateLimitMap.get(ip)
+  if (!entry || now > entry.resetAt) {
+    entry = { count: 0, resetAt: now + RATE_LIMIT_WINDOW_MS }
+    rateLimitMap.set(ip, entry)
+  }
+  entry.count++
+  if (entry.count > RATE_LIMIT_MAX) {
+    res.status(429).json({ ok: false, error: 'Too many requests. Please slow down.' })
+    return
+  }
+  next()
+})
+
+// Clean up rate limit map every 5 minutes
+setInterval(() => {
+  const now = Date.now()
+  for (const [ip, entry] of rateLimitMap) {
+    if (now > entry.resetAt) rateLimitMap.delete(ip)
+  }
+}, 300_000)
+
 app.use(express.static(path.resolve(process.cwd(), 'public')))
+
+const MAX_SSE_CONNECTIONS = 50
 
 const gateway = new GatewayClient(GATEWAY_URL, GATEWAY_TOKEN)
 
@@ -219,9 +268,31 @@ function deriveTaskTitleFromEvent(parsed: ParsedEnvelope): { title: string, isUs
     input?: any
     prompt?: any
     query?: any
+    name?: string
+    action?: string
+    tool_calls?: any[]
+    arguments?: any
   } | undefined
 
   const isUserPrompt = parsed.event?.kind === 'chat' && payload?.message?.role === 'user'
+
+  // Cerebro topic tracking heuristic
+  const toolName = parsed.event?.toolName || payload?.name || payload?.action || payload?.tool_calls?.[0]?.function?.name
+  if (toolName && parsed.event?.kind !== 'chat') {
+    const rawArgs = payload?.arguments || payload?.tool_calls?.[0]?.function?.arguments
+    let argStr = ''
+    try {
+      if (typeof rawArgs === 'string') {
+        const parsedArgs = JSON.parse(rawArgs)
+        const firstVal = Object.values(parsedArgs).find(v => typeof v === 'string' && v.trim().length > 0)
+        if (typeof firstVal === 'string') argStr = `: "${firstVal.substring(0, 40).replace(/\n/g, ' ')}${firstVal.length > 40 ? '...' : ''}"`
+      } else if (typeof rawArgs === 'object') {
+        const firstVal = Object.values(rawArgs).find(v => typeof v === 'string' && v.trim().length > 0)
+        if (typeof firstVal === 'string') argStr = `: "${firstVal.substring(0, 40).replace(/\n/g, ' ')}${firstVal.length > 40 ? '...' : ''}"`
+      }
+    } catch { }
+    return { title: `Action: ${toolName}${argStr}`, isUserPrompt: false }
+  }
 
   const fromMessage = extractTextFromUnknownMessage(payload?.message)
   const fromData = payload?.data ? extractTextFromUnknownMessage(payload.data) : ''
@@ -447,6 +518,59 @@ app.put('/api/agents/:id', (req, res) => {
   }
 })
 
+app.get('/api/agents/:id/export', (req, res) => {
+  try {
+    const config = getOpenClawConfig()
+    if (!config.agents?.list) {
+      res.status(404).json({ ok: false, error: 'No agents found' })
+      return
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const agent = config.agents.list.find((a: any) => a.id === req.params.id)
+    if (!agent) {
+      res.status(404).json({ ok: false, error: 'Agent not found' })
+      return
+    }
+
+    const exportPath = agent.workspace || agent.agentDir
+    if (!exportPath || !fs.existsSync(exportPath)) {
+      res.status(404).json({ ok: false, error: 'Agent directory not found' })
+      return
+    }
+
+    // Path traversal protection: ensure exportPath is within home directory
+    const resolvedExportPath = path.resolve(exportPath)
+    const homeDir = os.homedir()
+    if (!resolvedExportPath.startsWith(homeDir)) {
+      res.status(403).json({ ok: false, error: 'Access denied: path outside home directory' })
+      return
+    }
+
+    const files = fs.readdirSync(resolvedExportPath)
+    const mdFiles = files.filter(f => f.toLowerCase().endsWith('.md'))
+
+    const fileContents: Record<string, string> = {}
+    for (const file of mdFiles) {
+      // Sanitize: only allow simple filenames without path separators
+      if (file.includes('/') || file.includes('\\') || file.includes('..')) continue
+      try {
+        const filePath = path.join(resolvedExportPath, file)
+        // Double check the resolved file path is still within the export directory
+        if (!path.resolve(filePath).startsWith(resolvedExportPath)) continue
+        const content = fs.readFileSync(filePath, 'utf8')
+        fileContents[file] = content
+      } catch (err) {
+        console.warn(`Could not read ${file} for agent ${agent.id}:`, err)
+      }
+    }
+
+    res.json({ ok: true, files: fileContents })
+  } catch (error) {
+    res.status(500).json({ ok: false, error: error instanceof Error ? error.message : String(error) })
+  }
+})
+
 app.delete('/api/agents/:id', (req, res) => {
   try {
     const config = getOpenClawConfig()
@@ -512,9 +636,20 @@ app.get('/api/monitor/diagnostics', (_req, res) => {
   res.json({
     diagnostics: mergeDiagnostics(),
     recentEvents: getRecentEvents(100),
-    gatewayUrl: GATEWAY_URL,
+    // gatewayUrl intentionally redacted for security
     parserSchemaVersion: 1,
   })
+})
+
+app.get('/api/analytics', (req, res) => {
+  const rawDays = req.query.days ? Number(req.query.days) : 30
+  const days = Math.max(1, Math.min(365, Number.isFinite(rawDays) ? rawDays : 30))
+  try {
+    const data = getAnalytics(days)
+    res.json({ ok: true, data })
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err instanceof Error ? err.message : String(err) })
+  }
 })
 
 app.get('/api/tasks', (_req, res) => {
@@ -525,7 +660,7 @@ app.get('/api/tasks', (_req, res) => {
 app.post('/api/tasks/:id/status', (req, res) => {
   const body = (req.body && typeof req.body === 'object' ? req.body : {}) as { status?: string, sessionKey?: string }
   const status = body.status || ''
-  if (!['planned', 'in_progress', 'review', 'done'].includes(status)) {
+  if (!['planned', 'in_progress', 'waiting_approval', 'review', 'done'].includes(status)) {
     res.status(400).json({ ok: false, error: 'Invalid status' })
     return
   }
@@ -575,6 +710,12 @@ app.post('/api/tasks/:id/status', (req, res) => {
 })
 
 app.get('/api/monitor/events', (req, res) => {
+  // Limit concurrent SSE connections
+  if (sseClients.size >= MAX_SSE_CONNECTIONS) {
+    res.status(503).json({ ok: false, error: 'Too many SSE connections' })
+    return
+  }
+
   res.setHeader('Content-Type', 'text/event-stream')
   res.setHeader('Cache-Control', 'no-cache')
   res.setHeader('Connection', 'keep-alive')
@@ -657,20 +798,26 @@ app.post('/api/tasks', (req, res) => {
     title?: string
     description?: string
     sessionKey?: string
+    tags?: string[]
   }
-  const title = typeof body.title === 'string' ? body.title.trim() : ''
+  const title = typeof body.title === 'string' ? body.title.trim().slice(0, 500) : ''
   if (!title) {
     res.status(400).json({ ok: false, error: 'title is required' })
     return
   }
+  const description = typeof body.description === 'string' && body.description.trim() ? body.description.trim().slice(0, 5000) : undefined
+  const tags = Array.isArray(body.tags)
+    ? body.tags.filter(t => typeof t === 'string' && t.trim()).slice(0, 20).map(t => t.trim().slice(0, 50))
+    : []
   const id = `task:manual:${randomUUID()}`
   createTask({
     id,
     title,
-    description: typeof body.description === 'string' && body.description.trim() ? body.description.trim() : undefined,
-    sessionKey: typeof body.sessionKey === 'string' && body.sessionKey.trim() ? body.sessionKey.trim() : undefined,
+    description,
+    sessionKey: typeof body.sessionKey === 'string' && body.sessionKey.trim() ? body.sessionKey.trim().slice(0, 200) : undefined,
     autoGenerated: false,
     status: 'planned',
+    tags,
   })
   broadcastSse({ type: 'task_created', taskId: id, ts: Date.now() })
   res.json({ ok: true, taskId: id })
@@ -699,6 +846,51 @@ app.put('/api/tasks/:id', (req, res) => {
   res.json({ ok: true })
 })
 
+app.put('/api/tasks/:id/tags', (req, res) => {
+  const body = (req.body && typeof req.body === 'object' ? req.body : {}) as { tags?: string[] }
+  const tags = Array.isArray(body.tags)
+    ? body.tags.filter(t => typeof t === 'string' && t.trim()).slice(0, 20).map(t => t.trim().slice(0, 50))
+    : []
+  const ok = updateTaskTags(req.params.id, tags)
+  if (!ok) {
+    res.status(404).json({ ok: false, error: 'Task not found' })
+    return
+  }
+  broadcastSse({ type: 'task_updated', taskId: req.params.id, ts: Date.now() })
+  res.json({ ok: true })
+})
+
+app.post('/api/tasks/:id/approval', (req, res) => {
+  const body = (req.body && typeof req.body === 'object' ? req.body : {}) as { action?: string }
+  const action = body.action
+  if (action !== 'approve' && action !== 'reject') {
+    res.status(400).json({ ok: false, error: 'action must be "approve" or "reject"' })
+    return
+  }
+  const task = getTask(req.params.id)
+  if (!task) {
+    res.status(404).json({ ok: false, error: 'Task not found' })
+    return
+  }
+
+  if (task.sessionKey && gateway.isConnected()) {
+    const idempotencyKey = `approval:${req.params.id}:${Date.now()}`
+    const message = action === 'approve' ? 'Approved. Please proceed.' : 'Rejected. Please stop or ask for clarification.'
+
+    gateway.request('chat.send', {
+      sessionKey: task.sessionKey,
+      idempotencyKey,
+      message,
+    }).catch(console.error)
+  }
+
+  const newStatus = action === 'approve' ? 'in_progress' : 'review'
+  updateTaskStatus({ id: req.params.id, status: newStatus })
+  broadcastSse({ type: 'task_updated', taskId: req.params.id, status: newStatus, ts: Date.now() })
+
+  res.json({ ok: true })
+})
+
 app.delete('/api/tasks/:id', (req, res) => {
   const ok = deleteTask(req.params.id)
   if (!ok) {
@@ -707,6 +899,34 @@ app.delete('/api/tasks/:id', (req, res) => {
   }
   broadcastSse({ type: 'task_deleted', taskId: req.params.id, ts: Date.now() })
   res.json({ ok: true })
+})
+
+app.get('/api/schedules', (_req, res) => {
+  res.json({ ok: true, schedules: listSchedules() })
+})
+
+app.post('/api/schedules', (req, res) => {
+  const body = (req.body && typeof req.body === 'object' ? req.body : {}) as { cronExpr?: string; sessionKey?: string; prompt?: string }
+  const cronExpr = typeof body.cronExpr === 'string' ? body.cronExpr.trim().slice(0, 100) : ''
+  const sessionKey = typeof body.sessionKey === 'string' ? body.sessionKey.trim().slice(0, 200) : ''
+  const prompt = typeof body.prompt === 'string' ? body.prompt.trim().slice(0, 2000) : ''
+  if (!cronExpr || !sessionKey || !prompt) {
+    res.status(400).json({ ok: false, error: 'Missing required fields (cronExpr, sessionKey, prompt)' })
+    return
+  }
+  try {
+    cronParser.parseExpression(cronExpr)
+    const id = `sched:${randomUUID()}`
+    createSchedule({ id, cronExpr, sessionKey, prompt })
+    res.json({ ok: true, id })
+  } catch (err) {
+    res.status(400).json({ ok: false, error: 'Invalid cron expression' })
+  }
+})
+
+app.delete('/api/schedules/:id', (req, res) => {
+  const ok = deleteSchedule(req.params.id)
+  res.json({ ok })
 })
 
 const dev = process.env.NODE_ENV !== 'production'
@@ -748,6 +968,52 @@ nextApp.prepare().then(() => {
         })
       }
     }, 30_000)
+
+    setInterval(() => {
+      try {
+        const schedules = listSchedules()
+        const now = Date.now()
+        for (const sched of schedules) {
+          if (!sched.lastRunAt) {
+            updateScheduleLastRun(sched.id, now)
+            continue
+          }
+          try {
+            const interval = cronParser.parseExpression(sched.cronExpr, { currentDate: new Date(sched.lastRunAt) })
+            const nextTarget = interval.next().getTime()
+            if (now >= nextTarget) {
+              updateScheduleLastRun(sched.id, now)
+              if (gateway.isConnected()) {
+                const idempotencyKey = `cron:${sched.id}:${now}`
+                console.log(`[ops-ui] executing cron ${sched.id} for session ${sched.sessionKey}`)
+
+                const taskId = `task:cron:${randomUUID()}`
+                createTask({
+                  id: taskId,
+                  title: `Scheduled Task: ${sched.prompt.substring(0, 30)}...`,
+                  description: sched.prompt,
+                  sessionKey: sched.sessionKey,
+                  status: 'in_progress',
+                  sourceRunId: idempotencyKey,
+                  autoGenerated: true,
+                  tags: ['cron-job']
+                })
+
+                gateway.request('chat.send', {
+                  sessionKey: sched.sessionKey,
+                  idempotencyKey,
+                  message: sched.prompt,
+                }).catch(console.error)
+              }
+            }
+          } catch (e) {
+            console.warn(`Cron error for ${sched.id}: `, e)
+          }
+        }
+      } catch (e) {
+        console.error('Cron loop error:', e)
+      }
+    }, 60000)
   })
 }).catch((err: unknown) => {
   console.error('[ops-ui] Next.js preparation failed:', err)

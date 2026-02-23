@@ -2,11 +2,13 @@
 
 import { useEffect, useState } from "react"
 import { Activity, Bot, CheckCircle2, Clock, ListTodo, Zap, ArrowRight, Wifi, WifiOff } from "lucide-react"
+import { useLanguage } from "./i18n/context"
 
 type TaskSummary = { planned: number; in_progress: number; review: number; done: number; total: number }
 type SessionInfo = { sessionKey: string; status: string }
 
 export default function DashboardPage() {
+    const { t } = useLanguage()
     const [taskStats, setTaskStats] = useState<TaskSummary>({ planned: 0, in_progress: 0, review: 0, done: 0, total: 0 })
     const [sessions, setSessions] = useState<SessionInfo[]>([])
     const [connected, setConnected] = useState(true)
@@ -67,16 +69,18 @@ export default function DashboardPage() {
             <div className="fixed bottom-[-20%] right-[-10%] w-[50%] h-[50%] rounded-full bg-indigo-600/10 blur-[120px] pointer-events-none" />
 
             <div className="max-w-5xl mx-auto z-10 relative">
-                <header className="mb-12 text-center">
+                <header className="relative mb-12 text-center pt-8 md:pt-0">
+                    <div className="md:absolute right-0 top-0 flex justify-center md:justify-end items-center mb-6 md:mb-0">
+                        <span className={`inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1 rounded-full border transition-colors ${connected ? 'text-green-400 bg-green-500/10 border-green-500/20' : 'text-red-400 bg-red-500/10 border-red-500/20'}`}>
+                            {connected ? <Wifi className="w-3.5 h-3.5" /> : <WifiOff className="w-3.5 h-3.5" />}
+                            {connected ? 'Connected' : 'Offline'}
+                        </span>
+                    </div>
                     <h1 className="text-5xl font-extrabold bg-gradient-to-br from-white to-gray-400 bg-clip-text text-transparent pb-2">
-                        ClawProject Ops
+                        {t('dashboard.title')}
                     </h1>
                     <p className="mt-4 text-gray-400 text-lg flex items-center justify-center gap-2">
-                        OpenClaw Gateway Dashboard
-                        <span className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full ${connected ? 'text-green-400 bg-green-500/10' : 'text-red-400 bg-red-500/10 animate-pulse'}`}>
-                            {connected ? <Wifi className="w-3 h-3" /> : <WifiOff className="w-3 h-3" />}
-                            {connected ? 'Connected' : 'Reconnecting...'}
-                        </span>
+                        {t('dashboard.subtitle')}
                     </p>
                 </header>
 
