@@ -14,7 +14,7 @@ import { inferSessionFromListRow, parseGatewayEvent } from './parser.js'
 import type { Diagnostics, MonitorEvent, ParsedEnvelope, TaskStatus } from './types.js'
 
 const PORT = Number(process.env.PORT || 3010)
-const HOST = process.env.HOST || '0.0.0.0'
+const HOST = process.env.HOST || '127.0.0.1'
 const GATEWAY_URL = process.env.CLAWDBOT_URL || 'ws://127.0.0.1:18789'
 const MAX_QUEUE = Number(process.env.OPS_UI_MAX_QUEUE || 5000)
 const NOISY_EVENT_BACKPRESSURE_DROP = true

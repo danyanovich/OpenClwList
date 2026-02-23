@@ -63,10 +63,13 @@ Open **`http://127.0.0.1:3010`**
 
 ## Environment Variables
 
+> [!TIP]
+> **Network Access vs Security:** By default, `HOST` is set to `127.0.0.1` so the dashboard is only accessible from your own machine (safe for public Wi-Fi). If you want to access the dashboard from other devices on your local network (e.g., your phone or iPad), change `HOST` to `0.0.0.0` in your `.env.local` file.
+
 | Variable | Default | Description |
 |---|---|---|
 | `PORT` | `3010` | HTTP server port |
-| `HOST` | `0.0.0.0` | Bind address |
+| `HOST` | `127.0.0.1` | Bind address (use `0.0.0.0` for network access) |
 | `CLAWDBOT_URL` | `ws://127.0.0.1:18789` | OpenClaw Gateway WebSocket URL |
 | `CLAWDBOT_API_TOKEN` | — | Explicit auth token (preferred) |
 | `OPENCLAW_CONFIG_PATH` | — | Path to OpenClaw config file |
