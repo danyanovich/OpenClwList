@@ -93,6 +93,16 @@ setInterval(() => {
   }
 }, 300_000)
 
+app.get('/skill', (_req, res) => {
+  const skillPath = path.resolve(process.cwd(), 'public', 'skill.md')
+  if (fs.existsSync(skillPath)) {
+    res.setHeader('Content-Type', 'text/markdown; charset=utf-8')
+    res.sendFile(skillPath)
+  } else {
+    res.status(404).send('Skill manifest not found')
+  }
+})
+
 app.use(express.static(path.resolve(process.cwd(), 'public')))
 
 const MAX_SSE_CONNECTIONS = 50

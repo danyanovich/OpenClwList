@@ -23,6 +23,11 @@ export const translations = {
         'dashboard.agent_sessions': 'Agent Sessions',
         'dashboard.kanban_board': 'Kanban Board',
         'dashboard.manage_agents': 'Manage Agents',
+        'dashboard.quick_install_title': 'Install via OpenClaw Agent',
+        'dashboard.quick_install_text': 'Install OpenClwList for me! {url}',
+        'dashboard.quick_install_hint': 'Paste this URL to your OpenClaw Agent',
+        'dashboard.copy': 'Copy',
+        'dashboard.copied': 'Copied!',
 
         // Agents
         'agents.title': 'OpenClaw Nexus',
@@ -142,6 +147,11 @@ export const translations = {
         'dashboard.agent_sessions': 'Сессии агентов',
         'dashboard.kanban_board': 'Канбан-доска',
         'dashboard.manage_agents': 'Агенты',
+        'dashboard.quick_install_title': 'Установка через OpenClaw Agent',
+        'dashboard.quick_install_text': 'Установи для меня OpenClwList! {url}',
+        'dashboard.quick_install_hint': 'Вставьте эту ссылку вашему OpenClaw агенту',
+        'dashboard.copy': 'Копировать',
+        'dashboard.copied': 'Скопировано!',
 
         // Agents
         'agents.title': 'OpenClaw Nexus',

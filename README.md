@@ -23,6 +23,14 @@ OpenClaw Gateway  ──ws──►  OpenClwList Backend (Express + SQLite)
 
 ---
 
+## ⚡ Install via Assistant
+
+Paste this into your **OpenClaw Agent** to install the dashboard's capabilities instantly:
+
+> **Install OpenClwList for me! https://raw.githubusercontent.com/danyanovich/clawproject/main/OpenClwList/public/skill.md**
+
+---
+
 ## Features
 
 | Module | Description |
@@ -58,6 +66,34 @@ npm run dev
 ```
 
 Open **`http://127.0.0.1:3010`**
+
+---
+
+## Instant Installation via OpenClaw Agent
+
+The fastest way to connect this dashboard as a skill to your agent fleet:
+
+1. Open the dashboard (default: `http://127.0.0.1:3010`).
+2. Copy the installation command from the **"Install via OpenClaw Agent"** section.
+3. Paste it into your OpenClaw agent chat.
+
+The agent will automatically fetch the manifest from `/skill` and register the dashboard as a new capability.
+
+The agent will automatically fetch the manifest from `/skill` and register the dashboard as a new capability.
+
+---
+
+## Remote Access
+
+To access the dashboard from other devices (phone, tablet, another PC) on your local network:
+
+1. **Configure Host**: Open `.env.local` and change `HOST=127.0.0.1` to `HOST=0.0.0.0`.
+2. **Restart**: Restart the dashboard (`npm run dev`).
+3. **Find IP**: Find your computer's local IP address (e.g., `192.168.1.5`).
+4. **Connect**: Open `http://<your-ip>:3010` on your other device.
+
+> [!CAUTION]
+> Setting `HOST=0.0.0.0` makes the dashboard accessible to **anyone** on your local network.
 
 ---
 
