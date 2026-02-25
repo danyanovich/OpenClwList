@@ -54,12 +54,11 @@ Paste this into your **OpenClaw Agent** to install the dashboard's capabilities 
 ```bash
 # 1. Clone and install
 git clone https://github.com/danyanovich/clawproject.git
-cd OpenClwList
+cd clawproject
 npm install
 
 # 2. Configure
 cp .env.example .env.local
-# Edit .env.local — set CLAWDBOT_URL to your gateway address
 
 # 3. Run in development
 npm run dev

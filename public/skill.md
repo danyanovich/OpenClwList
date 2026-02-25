@@ -30,7 +30,7 @@ The agent can interact with the following local endpoints (default `http://127.0
 If the user asks to "install", "deploy", or "run" this dashboard, follow these steps:
 
 1. **Clone**: `git clone https://github.com/danyanovich/clawproject.git`
-2. **Setup**: `cd OpenClwList && npm install`
+2. **Setup**: `cd clawproject && npm install`
 3. **Configure**: `cp .env.example .env.local`
 4. **Run**: `npm run dev` (starts on port 3010 by default)
 
