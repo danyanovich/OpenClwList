@@ -2,6 +2,8 @@ import { randomUUID } from 'node:crypto'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import { exec } from 'node:child_process'
+import { promisify } from 'node:util'
 import express from 'express'
 import next from 'next'
 import JSON5 from 'json5'
@@ -12,6 +14,8 @@ const cronParser = require('cron-parser')
 import { GatewayClient } from './gateway-client.js'
 import { inferSessionFromListRow, parseGatewayEvent } from './parser.js'
 import type { Diagnostics, MonitorEvent, ParsedEnvelope, TaskStatus } from './types.js'
+
+const execAsync = promisify(exec)
 
 const PORT = Number(process.env.PORT || 3010)
 const HOST = process.env.HOST || '127.0.0.1'
@@ -100,6 +104,15 @@ app.get('/skill', (_req, res) => {
     res.sendFile(skillPath)
   } else {
     res.status(404).send('Skill manifest not found')
+  }
+})
+
+app.post('/api/system/update', async (_req, res) => {
+  try {
+    const { stdout, stderr } = await execAsync('git pull')
+    res.json({ success: true, output: stdout || stderr })
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message })
   }
 })
 
@@ -949,7 +962,24 @@ nextApp.prepare().then(() => {
   })
 
   app.listen(PORT, HOST, async () => {
-    console.log(`[ops-ui] listening on http://${HOST}:${PORT}`)
+    const isAnyIPv4 = HOST === '0.0.0.0'
+    const isAnyIPv6 = HOST === '::'
+    const isAny = isAnyIPv4 || isAnyIPv6
+
+    if (isAny) {
+      console.log(`[ops-ui] listening on:`)
+      console.log(`  - Local:   http://localhost:${PORT}`)
+      const interfaces = os.networkInterfaces()
+      for (const name of Object.keys(interfaces)) {
+        for (const iface of interfaces[name] || []) {
+          if (iface.family === 'IPv4' && !iface.internal) {
+            console.log(`  - Network: http://${iface.address}:${PORT}`)
+          }
+        }
+      }
+    } else {
+      console.log(`[ops-ui] listening on http://${HOST}:${PORT}`)
+    }
     console.log(
       `[ops-ui] gateway auth: ${GATEWAY_TOKEN ? `token loaded (${TOKEN_DETECTION.source})` : `no token (${TOKEN_DETECTION.source})`}`,
     )

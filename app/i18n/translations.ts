@@ -11,6 +11,7 @@ export const translations = {
         'app.live': 'Live',
         'app.back_nexus': '← Back to Nexus',
         'app.cancel': 'Cancel',
+        'common.loading': 'Loading',
 
         // Dashboard
         'dashboard.title': 'OpenClwList',
@@ -31,6 +32,11 @@ export const translations = {
         'dashboard.run_background_title': 'Run in Background (Production)',
         'dashboard.run_background_text': 'Run OpenClwList in the background: {cmd}',
         'dashboard.pm2_hint': 'Assumes PM2 is installed: npm install -g pm2',
+        'dashboard.update_check': 'Check for Updates',
+        'dashboard.update_running': 'Updating...',
+        'dashboard.update_success': 'Update successful!',
+        'dashboard.update_error': 'Update failed: {error}',
+        'dashboard.update_output': 'Output:',
 
         // Agents
         'agents.title': 'OpenClaw Nexus',
@@ -138,6 +144,7 @@ export const translations = {
         'app.live': 'Онлайн',
         'app.back_nexus': '← Назад к Nexus',
         'app.cancel': 'Отмена',
+        'common.loading': 'Загрузка',
 
         // Dashboard
         'dashboard.title': 'OpenClwList',
@@ -158,6 +165,11 @@ export const translations = {
         'dashboard.run_background_title': 'Запуск в фоне (Production)',
         'dashboard.run_background_text': 'Запустить OpenClwList в фоне: {cmd}',
         'dashboard.pm2_hint': 'Требуется PM2: npm install -g pm2',
+        'dashboard.update_check': 'Проверить обновления',
+        'dashboard.update_running': 'Обновление...',
+        'dashboard.update_success': 'Обновление завершено!',
+        'dashboard.update_error': 'Ошибка обновления: {error}',
+        'dashboard.update_output': 'Результат:',
 
         // Agents
         'agents.title': 'OpenClaw Nexus',

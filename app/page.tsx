@@ -14,6 +14,8 @@ export default function DashboardPage() {
     const [connected, setConnected] = useState(true)
     const [loading, setLoading] = useState(true)
     const [copied, setCopied] = useState(false)
+    const [updating, setUpdating] = useState(false)
+    const [updateResult, setUpdateResult] = useState<{ success: boolean; output?: string; error?: string } | null>(null)
     const [skillUrl, setSkillUrl] = useState("")
 
     useEffect(() => {
@@ -63,6 +65,26 @@ export default function DashboardPage() {
         connect()
         return () => { es?.close(); clearTimeout(reconnectTimer) }
     }, [])
+
+    async function handleUpdate() {
+        setUpdating(true)
+        setUpdateResult(null)
+        try {
+            const resp = await fetch("/api/system/update", { method: "POST" })
+            const data = await resp.json()
+            setUpdateResult(data)
+        } catch (err: any) {
+            setUpdateResult({ success: false, error: err.message })
+        } finally {
+            setUpdating(false)
+        }
+    }
+
+    if (loading) return (
+        <div className="min-h-screen bg-[#070709] text-white flex items-center justify-center">
+            <div className="text-lg text-gray-400">{t('common.loading')}...</div>
+        </div>
+    )
 
     const stats = [
         { label: 'To Do', value: taskStats.planned, icon: <ListTodo className="w-5 h-5" />, color: 'text-gray-400', bg: 'bg-gray-500/10', border: 'border-gray-500/20' },
@@ -196,6 +218,47 @@ export default function DashboardPage() {
                                 {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
                                 {copied ? t('dashboard.copied') : t('dashboard.copy')}
                             </button>
+                        </div>
+                    </div>
+
+                    {/* Check for Updates Section */}
+                    <div className="max-w-2xl mx-auto mt-4 bg-blue-500/5 border border-blue-500/20 rounded-2xl p-6 backdrop-blur-xl relative overflow-hidden group">
+                        <div className="absolute top-0 left-0 w-1 h-full bg-blue-500/40" />
+                        <div className="flex flex-col items-center gap-4">
+                            <div className="flex items-center justify-between w-full">
+                                <div className="flex items-center gap-4 text-left">
+                                    <div className="w-12 h-12 rounded-xl bg-blue-500/10 flex items-center justify-center shrink-0 border border-blue-500/20">
+                                        <Activity className={`w-6 h-6 text-blue-400 ${updating ? 'animate-pulse' : ''}`} />
+                                    </div>
+                                    <div>
+                                        <p className="text-sm font-bold uppercase tracking-widest text-blue-500 mb-1">
+                                            {t('app.version')}
+                                        </p>
+                                        <p className="text-gray-400 text-sm">
+                                            {updating ? t('dashboard.update_running') : t('dashboard.update_check')}
+                                        </p>
+                                    </div>
+                                </div>
+                                <button
+                                    onClick={handleUpdate}
+                                    disabled={updating}
+                                    className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold transition-all shrink-0 ${updating ? 'bg-gray-700 text-gray-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-500 text-white shadow-lg shadow-blue-500/20'}`}
+                                >
+                                    {updating ? <Clock className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
+                                    {updating ? t('dashboard.update_running') : t('dashboard.update_check')}
+                                </button>
+                            </div>
+
+                            {updateResult && (
+                                <div className={`w-full mt-4 p-4 rounded-xl border font-mono text-xs text-left overflow-auto max-h-48 ${updateResult.success ? 'bg-green-500/5 border-green-500/20 text-green-400' : 'bg-red-500/5 border-red-500/20 text-red-400'}`}>
+                                    <p className="font-bold mb-2">
+                                        {updateResult.success ? t('dashboard.update_success') : t('dashboard.update_error').replace('{error}', updateResult.error || '')}
+                                    </p>
+                                    {updateResult.output && (
+                                        <pre className="whitespace-pre-wrap opacity-80">{updateResult.output}</pre>
+                                    )}
+                                </div>
+                            )}
                         </div>
                     </div>
                 </div>
