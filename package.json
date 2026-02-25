@@ -18,7 +18,11 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "check": "npm run typecheck && npm run lint",
-    "smoke": "bash scripts/smoke.sh"
+    "smoke": "bash scripts/smoke.sh",
+    "service:start": "bash scripts/manage.sh start",
+    "service:stop": "bash scripts/manage.sh stop",
+    "service:status": "bash scripts/manage.sh status",
+    "service:logs": "bash scripts/manage.sh logs"
   },
   "dependencies": {
     "clsx": "^2.1.1",

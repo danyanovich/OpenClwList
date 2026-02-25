@@ -8,7 +8,7 @@ type TaskSummary = { planned: number; in_progress: number; review: number; done:
 type SessionInfo = { sessionKey: string; status: string }
 
 export default function DashboardPage() {
-    const { t } = useLanguage()
+    const { t, lang, setLang } = useLanguage()
     const [taskStats, setTaskStats] = useState<TaskSummary>({ planned: 0, in_progress: 0, review: 0, done: 0, total: 0 })
     const [sessions, setSessions] = useState<SessionInfo[]>([])
     const [connected, setConnected] = useState(true)
@@ -116,10 +116,10 @@ export default function DashboardPage() {
     )
 
     const stats = [
-        { label: 'To Do', value: taskStats.planned, icon: <ListTodo className="w-5 h-5" />, color: 'text-gray-400', bg: 'bg-gray-500/10', border: 'border-gray-500/20' },
-        { label: 'In Progress', value: taskStats.in_progress, icon: <Clock className="w-5 h-5" />, color: 'text-blue-400', bg: 'bg-blue-500/10', border: 'border-blue-500/20' },
-        { label: 'Review', value: taskStats.review, icon: <Activity className="w-5 h-5" />, color: 'text-yellow-400', bg: 'bg-yellow-500/10', border: 'border-yellow-500/20' },
-        { label: 'Done', value: taskStats.done, icon: <CheckCircle2 className="w-5 h-5" />, color: 'text-green-400', bg: 'bg-green-500/10', border: 'border-green-500/20' },
+        { label: t('dashboard.todo'), value: taskStats.planned, icon: <ListTodo className="w-5 h-5" />, color: 'text-gray-400', bg: 'bg-gray-500/10', border: 'border-gray-500/20' },
+        { label: t('dashboard.in_progress'), value: taskStats.in_progress, icon: <Clock className="w-5 h-5" />, color: 'text-blue-400', bg: 'bg-blue-500/10', border: 'border-blue-500/20' },
+        { label: t('dashboard.review'), value: taskStats.review, icon: <Activity className="w-5 h-5" />, color: 'text-yellow-400', bg: 'bg-yellow-500/10', border: 'border-yellow-500/20' },
+        { label: t('dashboard.done'), value: taskStats.done, icon: <CheckCircle2 className="w-5 h-5" />, color: 'text-green-400', bg: 'bg-green-500/10', border: 'border-green-500/20' },
     ]
 
     return (
@@ -129,10 +129,24 @@ export default function DashboardPage() {
 
             <div className="max-w-5xl mx-auto z-10 relative">
                 <header className="relative mb-12 text-center pt-8 md:pt-0">
-                    <div className="md:absolute right-0 top-0 flex justify-center md:justify-end items-center mb-6 md:mb-0">
+                    <div className="md:absolute right-0 top-0 flex flex-col md:flex-row justify-center md:justify-end items-center gap-4 mb-6 md:mb-0">
+                        <div className="flex bg-white/5 border border-white/10 rounded-full p-1">
+                            <button
+                                onClick={() => setLang('en')}
+                                className={`px-3 py-1 rounded-full text-[10px] font-bold transition-all ${lang === 'en' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20' : 'text-gray-500 hover:text-gray-300'}`}
+                            >
+                                EN
+                            </button>
+                            <button
+                                onClick={() => setLang('ru')}
+                                className={`px-3 py-1 rounded-full text-[10px] font-bold transition-all ${lang === 'ru' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20' : 'text-gray-500 hover:text-gray-300'}`}
+                            >
+                                RU
+                            </button>
+                        </div>
                         <span className={`inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1 rounded-full border transition-colors ${connected ? 'text-green-400 bg-green-500/10 border-green-500/20' : 'text-red-400 bg-red-500/10 border-red-500/20'}`}>
                             {connected ? <Wifi className="w-3.5 h-3.5" /> : <WifiOff className="w-3.5 h-3.5" />}
-                            {connected ? 'Connected' : 'Offline'}
+                            {connected ? t('app.connected') : t('app.offline')}
                         </span>
                     </div>
                     <h1 className="text-5xl font-extrabold bg-gradient-to-br from-white to-gray-400 bg-clip-text text-transparent pb-2">
@@ -159,14 +173,14 @@ export default function DashboardPage() {
                     <div className="bg-white/5 border border-white/10 rounded-2xl p-6 backdrop-blur-xl">
                         <div className="flex items-center gap-3 mb-4">
                             <Zap className="w-5 h-5 text-indigo-400" />
-                            <h2 className="text-sm font-bold uppercase tracking-wider text-gray-400">Total Tasks</h2>
+                            <h2 className="text-sm font-bold uppercase tracking-wider text-gray-400">{t('dashboard.total_tasks')}</h2>
                         </div>
                         <p className="text-4xl font-extrabold text-white">{loading ? '–' : taskStats.total}</p>
                     </div>
                     <div className="bg-white/5 border border-white/10 rounded-2xl p-6 backdrop-blur-xl">
                         <div className="flex items-center gap-3 mb-4">
                             <Bot className="w-5 h-5 text-indigo-400" />
-                            <h2 className="text-sm font-bold uppercase tracking-wider text-gray-400">Agent Sessions</h2>
+                            <h2 className="text-sm font-bold uppercase tracking-wider text-gray-400">{t('dashboard.agent_sessions')}</h2>
                         </div>
                         <p className="text-4xl font-extrabold text-white">{loading ? '–' : sessions.length}</p>
                         {sessions.length > 0 && (
@@ -293,8 +307,8 @@ export default function DashboardPage() {
                                 <div className="flex items-center gap-3">
                                     <RefreshCw className="w-5 h-5 text-blue-400" />
                                     <div className="text-left">
-                                        <p className="text-sm font-bold text-gray-200">Auto-Update</p>
-                                        <p className="text-xs text-gray-400">Automatically pull latest changes</p>
+                                        <p className="text-sm font-bold text-gray-200">{t('dashboard.auto_update')}</p>
+                                        <p className="text-xs text-gray-400">{t('dashboard.auto_update_desc')}</p>
                                     </div>
                                 </div>
                                 <div className="flex items-center gap-3">
@@ -308,7 +322,7 @@ export default function DashboardPage() {
                                             className="w-16 bg-white/5 border border-white/10 rounded-lg px-2 py-1 text-sm text-center outline-none focus:border-blue-500/50"
                                             disabled={savingSettings}
                                         />
-                                        <span className="text-xs text-gray-400">min</span>
+                                        <span className="text-xs text-gray-400">{t('dashboard.minutes')}</span>
                                     </div>
                                     <button
                                         onClick={() => handleSaveSettings(!autoUpdateEnabled, autoUpdateInterval)}
@@ -326,10 +340,10 @@ export default function DashboardPage() {
                 {/* Quick Actions */}
                 <div className="flex flex-col sm:flex-row gap-4 justify-center">
                     <a href="/tasks" className="flex items-center justify-center gap-2 px-8 py-3.5 rounded-full bg-indigo-600 hover:bg-indigo-500 transition-all text-white font-semibold shadow-lg shadow-indigo-500/30 hover:shadow-indigo-500/50 hover:scale-105">
-                        <ListTodo className="w-5 h-5" /> Kanban Board <ArrowRight className="w-4 h-4" />
+                        <ListTodo className="w-5 h-5" /> {t('dashboard.kanban_board')} <ArrowRight className="w-4 h-4" />
                     </a>
                     <a href="/agents" className="flex items-center justify-center gap-2 px-8 py-3.5 rounded-full bg-white/5 hover:bg-white/10 transition-all text-white font-semibold border border-white/10 hover:scale-105">
-                        <Bot className="w-5 h-5" /> Manage Agents <ArrowRight className="w-4 h-4" />
+                        <Bot className="w-5 h-5" /> {t('dashboard.manage_agents')} <ArrowRight className="w-4 h-4" />
                     </a>
                 </div>
             </div>

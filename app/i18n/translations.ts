@@ -7,11 +7,13 @@ export const translations = {
         'app.subtitle': 'OpenClaw Gateway Dashboard',
         'app.version': 'v0.01',
         'app.connected': 'Connected',
+        'app.offline': 'Offline',
         'app.reconnecting': 'Reconnecting...',
         'app.live': 'Live',
         'app.back_nexus': '← Back to Nexus',
         'app.cancel': 'Cancel',
         'common.loading': 'Loading',
+        'common.offline': 'Offline',
 
         // Dashboard
         'dashboard.title': 'OpenClwList',
@@ -37,6 +39,9 @@ export const translations = {
         'dashboard.update_success': 'Update successful!',
         'dashboard.update_error': 'Update failed: {error}',
         'dashboard.update_output': 'Output:',
+        'dashboard.auto_update': 'Auto-Update',
+        'dashboard.auto_update_desc': 'Automatically pull latest changes',
+        'dashboard.minutes': 'min',
 
         // Agents
         'agents.title': 'OpenClaw Nexus',
@@ -140,11 +145,13 @@ export const translations = {
         'app.subtitle': 'Панель управления OpenClaw Gateway',
         'app.version': 'v0.01',
         'app.connected': 'Подключено',
+        'app.offline': 'Оффлайн',
         'app.reconnecting': 'Переподключение...',
         'app.live': 'Онлайн',
         'app.back_nexus': '← Назад к Nexus',
         'app.cancel': 'Отмена',
         'common.loading': 'Загрузка',
+        'common.offline': 'Оффлайн',
 
         // Dashboard
         'dashboard.title': 'OpenClwList',
@@ -170,6 +177,9 @@ export const translations = {
         'dashboard.update_success': 'Обновление завершено!',
         'dashboard.update_error': 'Ошибка обновления: {error}',
         'dashboard.update_output': 'Результат:',
+        'dashboard.auto_update': 'Авто-обновление',
+        'dashboard.auto_update_desc': 'Автоматически загружать изменения',
+        'dashboard.minutes': 'мин',
 
         // Agents
         'agents.title': 'OpenClaw Nexus',
