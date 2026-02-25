@@ -15,19 +15,46 @@ interface Agent {
     targetPos?: Point
 }
 
-export const Visualization: React.FC = () => {
+export type VisualizationAgentInput = {
+    id: string
+    name: string
+    status: 'idle' | 'active' | 'thinking'
+}
+
+interface VisualizationProps {
+    agents: VisualizationAgentInput[]
+}
+
+export const Visualization: React.FC<VisualizationProps> = ({ agents: inputAgents }) => {
     const [zoom, setZoom] = useState(1)
     const [offset, setOffset] = useState<Point>({ x: 0, y: 0 })
     const containerRef = useRef<HTMLDivElement>(null)
     const [isDragging, setIsDragging] = useState(false)
     const [dragStart, setDragStart] = useState<Point>({ x: 0, y: 0 })
 
-    // Current session states from API would go here
-    const [agents, setAgents] = useState<Agent[]>([
-        { id: '1', name: 'Agent Alpha', status: 'active', pos: { x: 150, y: 150 } },
-        { id: '2', name: 'Agent Beta', status: 'thinking', pos: { x: 450, y: 250 } },
-        { id: '3', name: 'Agent Gamma', status: 'idle', pos: { x: 100, y: 400 } },
-    ])
+    const [agents, setAgents] = useState<Agent[]>([])
+
+    // lay out incoming agents on a loose grid when list changes
+    useEffect(() => {
+        const baseX = 120
+        const baseY = 140
+        const gapX = 220
+        const gapY = 160
+        const next: Agent[] = inputAgents.map((a, idx) => {
+            const row = Math.floor(idx / 3)
+            const col = idx % 3
+            return {
+                id: a.id,
+                name: a.name,
+                status: a.status,
+                pos: {
+                    x: baseX + col * gapX + (Math.random() * 40 - 20),
+                    y: baseY + row * gapY + (Math.random() * 30 - 15),
+                },
+            }
+        })
+        setAgents(next)
+    }, [JSON.stringify(inputAgents)])
 
     // Move targets for "Walking" effect
     const [targets, setTargets] = useState<Record<string, Point>>({})
@@ -140,33 +167,62 @@ export const Visualization: React.FC = () => {
                         style={{ left: agent.pos.x, top: agent.pos.y, transition: 'all 0.05s linear' }}
                     >
                         {/* Status Indicator */}
-                        <div className="absolute -top-12 opacity-0 group-hover:opacity-100 transition-opacity bg-black/80 text-[10px] px-2 py-1 rounded-md border border-white/10 whitespace-nowrap z-50">
+                        <div className="absolute -top-12 opacity-0 group-hover:opacity-100 transition-opacity bg-black/90 text-[10px] px-2 py-1 rounded-md border border-white/10 whitespace-nowrap z-50 shadow-lg">
                             {agent.status.toUpperCase()}
                         </div>
 
-                        {/* Agent "Pixel" Body */}
-                        <div className={`relative w-10 h-10 shadow-2xl transition-transform duration-200 ${agent.status === 'thinking' ? 'animate-pulse scale-110' : ''}`}>
-                            {/* Pixel Art Style Body */}
-                            <div className={`w-10 h-10 rounded-lg border-2 border-black/50 ${agent.status === 'active' ? 'bg-indigo-500' :
-                                    agent.status === 'thinking' ? 'bg-amber-500' : 'bg-emerald-500'
-                                }`}>
-                                <div className="absolute top-2 left-2 w-2 h-2 bg-black/30 rounded-full" />
-                                <div className="absolute top-2 right-2 w-2 h-2 bg-black/30 rounded-full" />
-                                <div className="absolute bottom-2 left-1/2 -translate-x-1/2 w-4 h-1 bg-black/20 rounded-full" />
+                        {/* Agent "Pixel" Body - more detailed, Stardew-like */}
+                        <div className={`relative w-12 h-14 shadow-2xl transition-transform duration-200 ${agent.status === 'thinking' ? 'animate-[pulse_1.2s_ease-in-out_infinite] scale-105' : ''}`}>
+                            {/* Body */}
+                            <div className={`relative w-12 h-12 rounded-[6px] border-2 border-black/70 overflow-hidden
+                                ${agent.status === 'active'
+                                    ? 'bg-gradient-to-b from-indigo-400 to-indigo-700'
+                                    : agent.status === 'thinking'
+                                        ? 'bg-gradient-to-b from-amber-300 to-amber-600'
+                                        : 'bg-gradient-to-b from-emerald-300 to-emerald-600'
+                                }`}
+                            >
+                                {/* Face shading */}
+                                <div className="absolute inset-0 bg-gradient-to-br from-white/10 via-transparent to-black/30" />
+
+                                {/* Eyes */}
+                                <div className="absolute top-3 left-2 right-2 flex justify-between">
+                                    <div className="w-3 h-3 bg-black/70 rounded-[2px] flex items-center justify-center">
+                                        <div className="w-1.5 h-1.5 bg-white/80 rounded-sm translate-x-[0.5px] -translate-y-[0.5px]" />
+                                    </div>
+                                    <div className="w-3 h-3 bg-black/70 rounded-[2px] flex items-center justify-center">
+                                        <div className="w-1.5 h-1.5 bg-white/80 rounded-sm translate-x-[0.5px] -translate-y-[0.5px]" />
+                                    </div>
+                                </div>
+
+                                {/* Mouth */}
+                                <div className="absolute bottom-2 left-1/2 -translate-x-1/2 w-6 h-1.5 rounded-full bg-black/40" />
+
+                                {/* Status dots on chest */}
+                                <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-1">
+                                    {Array.from({ length: 3 }).map((_, i) => (
+                                        <div
+                                            key={i}
+                                            className={
+                                                'w-1.5 h-1.5 rounded-full ' +
+                                                (agent.status === 'thinking'
+                                                    ? 'bg-amber-200 animate-[bounce_1s_infinite]'
+                                                    : agent.status === 'active'
+                                                        ? 'bg-emerald-200'
+                                                        : 'bg-slate-200/70')
+                                            }
+                                            style={agent.status === 'thinking' ? { animationDelay: `${i * 0.15}s` } : {}}
+                                        />
+                                    ))}
+                                </div>
                             </div>
 
-                            {/* Activity Particles for Thinking */}
-                            {agent.status === 'thinking' && (
-                                <div className="absolute -top-4 left-1/2 -translate-x-1/2 flex gap-1">
-                                    <div className="w-1.5 h-1.5 bg-amber-400 rounded-full animate-bounce [animation-delay:-0.3s]" />
-                                    <div className="w-1.5 h-1.5 bg-amber-400 rounded-full animate-bounce [animation-delay:-0.15s]" />
-                                    <div className="w-1.5 h-1.5 bg-amber-400 rounded-full animate-bounce" />
-                                </div>
-                            )}
+                            {/* Simple feet shadow */}
+                            <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-8 h-1.5 bg-black/40 rounded-full opacity-60" />
                         </div>
 
                         {/* Nameplate */}
-                        <div className="mt-2 bg-black/40 backdrop-blur-md border border-white/5 px-2 py-0.5 rounded-full text-[9px] font-bold text-white/80 font-mono shadow-lg">
+                        <div className="mt-2 bg-black/60 backdrop-blur-md border border-white/10 px-2 py-0.5 rounded-full text-[9px] font-bold text-white/80 font-mono shadow-lg">
                             {agent.name}
                         </div>
                     </div>

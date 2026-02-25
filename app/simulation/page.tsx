@@ -175,7 +175,7 @@ export default function SimulationPage() {
 
                 {/* Main Simulation View */}
                 <div className="lg:col-span-3">
-                    <Visualization />
+                    <Visualization agents={activeAgents} />
                 </div>
             </main>
 
