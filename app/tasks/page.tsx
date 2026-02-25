@@ -19,6 +19,7 @@ type TaskItem = {
     createdAt: number
     updatedAt: number
     tags?: string[]
+    topic?: string
 }
 
 export default function TasksPage() {
@@ -44,12 +45,14 @@ export default function TasksPage() {
     const [eventTrigger, setEventTrigger] = useState(0)
     const [newTaskDesc, setNewTaskDesc] = useState("")
     const [showDescField, setShowDescField] = useState(false)
-    const [editingTask, setEditingTask] = useState<{ id: string; title: string; description: string; tags: string[] } | null>(null)
+    const [editingTask, setEditingTask] = useState<{ id: string; title: string; description: string; tags: string[]; topic?: string } | null>(null)
     const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
     const [searchQuery, setSearchQuery] = useState("")
 
     // Agents metadata (for mapping sessionKey -> agent name)
     const [agentsById, setAgentsById] = useState<Record<string, { id: string; name?: string; role?: string }>>({})
+    const [agentFilter, setAgentFilter] = useState<string>('all')
+    const [tagFilter, setTagFilter] = useState<string>('all')
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const [selectedTaskEvents, setSelectedTaskEvents] = useState<any[] | null>(null)
@@ -160,10 +163,21 @@ export default function TasksPage() {
                     if (data.events) {
                         // eslint-disable-next-line @typescript-eslint/no-explicit-any
                         const merged: any[] = [];
+                        const detectRole = (ev: any): 'user' | 'agent' | 'tool' | 'system' => {
+                            if (ev.kind === 'tool' || ev.toolName) return 'tool'
+                            const payload = ev.payload || {}
+                            const msg = payload.message || {}
+                            const role = msg.role
+                            if (role === 'user') return 'user'
+                            if (role === 'assistant' || role === 'agent') return 'agent'
+                            return 'system'
+                        }
+
                         for (const e of data.events) {
                             const rawText = extractTextFromEvent(e).trim();
                             if (!rawText) continue;
 
+                            const role = detectRole(e)
                             let mergedIntoExisting = false;
 
                             const lookbackLimit = Math.max(0, merged.length - 10);
@@ -196,11 +210,14 @@ export default function TasksPage() {
                             }
 
                             if (!mergedIntoExisting) {
-                                merged.push({ ...e, text: rawText });
+                                merged.push({ ...e, text: rawText, role });
                             }
                         }
 
-                        const finalEvents = merged.map(m => ({ ...m, text: m.text.trim() })).filter(m => m.text.length > 0);
+                        const finalEvents = merged
+                            .map(m => ({ ...m, text: m.text.trim() }))
+                            .filter(m => m.text.length > 0)
+                            .filter(m => !(m.kind === 'tool' && m.text.length < 5))
                         setSelectedTaskEvents(finalEvents)
                     }
                 })
@@ -299,7 +316,11 @@ export default function TasksPage() {
                 fetch(`/api/tasks/${editingTask.id}`, {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ title: editingTask.title.trim(), description: editingTask.description.trim() || undefined })
+                    body: JSON.stringify({
+                        title: editingTask.title.trim(),
+                        description: editingTask.description.trim() || undefined,
+                        topic: editingTask.topic?.trim() || undefined,
+                    })
                 }),
                 fetch(`/api/tasks/${editingTask.id}/tags`, {
                     method: 'PUT',
@@ -310,7 +331,7 @@ export default function TasksPage() {
 
             loadTasks()
             if (selectedTask?.id === editingTask.id) {
-                setSelectedTask(prev => prev ? { ...prev, title: editingTask.title.trim(), description: editingTask.description.trim(), tags: editingTask.tags } : null)
+                setSelectedTask(prev => prev ? { ...prev, title: editingTask.title.trim(), description: editingTask.description.trim(), tags: editingTask.tags, topic: editingTask.topic } : null)
             }
             setEditingTask(null)
         } catch (err) {
@@ -318,9 +339,20 @@ export default function TasksPage() {
         }
     }
 
-    const filteredTasks = searchQuery.trim()
+    const filteredTasks = (searchQuery.trim()
         ? tasks.filter(t => t.title.toLowerCase().includes(searchQuery.toLowerCase()) || t.description?.toLowerCase().includes(searchQuery.toLowerCase()) || t.tags?.some(tag => tag.toLowerCase().includes(searchQuery.toLowerCase())))
-        : tasks
+        : tasks)
+        .filter(t => {
+            if (agentFilter === 'all') return true
+            const sk = t.sessionKey || ''
+            const match = /^agent:([^:]+):/.exec(sk)
+            const agentId = match?.[1]
+            return agentId === agentFilter
+        })
+        .filter(t => {
+            if (tagFilter === 'all') return true
+            return t.tags?.includes(tagFilter)
+        })
 
     return (
         <div className="min-h-screen bg-surface text-ink p-6 md:p-12 font-sans relative overflow-x-hidden">
@@ -405,15 +437,43 @@ export default function TasksPage() {
                     )}
                 </header>
 
-                <div className="mb-4 relative">
-                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-mute" />
-                    <input
-                        type="text"
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        placeholder={t('tasks.search_placeholder')}
-                        className="w-full bg-field border border-rim rounded-full py-2 pl-10 pr-4 text-sm text-ink placeholder:text-mute focus:outline-none focus:border-accent/50"
-                    />
+                <div className="mb-4 flex flex-col md:flex-row gap-3 items-stretch md:items-center">
+                    <div className="relative flex-1">
+                        <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-mute" />
+                        <input
+                            type="text"
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                            placeholder={t('tasks.search_placeholder')}
+                            className="w-full bg-field border border-rim rounded-full py-2 pl-10 pr-4 text-sm text-ink placeholder:text-mute focus:outline-none focus:border-accent/50"
+                        />
+                    </div>
+
+                    {/* Agent filter */}
+                    <select
+                        value={agentFilter}
+                        onChange={e => setAgentFilter(e.target.value)}
+                        className="bg-field border border-rim rounded-full py-2 px-4 text-xs text-dim focus:outline-none focus:border-accent/50 shrink-0 max-w-[180px]"
+                    >
+                        <option value="all">{t('tasks.filter_all_agents') ?? 'All agents'}</option>
+                        {Object.values(agentsById).map(agent => (
+                            <option key={agent.id} value={agent.id}>
+                                {agent.name || agent.id}
+                            </option>
+                        ))}
+                    </select>
+
+                    {/* Tag filter */}
+                    <select
+                        value={tagFilter}
+                        onChange={e => setTagFilter(e.target.value)}
+                        className="bg-field border border-rim rounded-full py-2 px-4 text-xs text-dim focus:outline-none focus:border-accent/50 shrink-0 max-w-[180px]"
+                    >
+                        <option value="all">{t('tasks.filter_all_tags') ?? 'All tags'}</option>
+                        {Array.from(new Set(tasks.flatMap(t => t.tags || []))).map(tag => (
+                            <option key={tag} value={tag}>{tag}</option>
+                        ))}
+                    </select>
                 </div>
 
                 {loading && tasks.length === 0 ? (
@@ -498,6 +558,14 @@ export default function TasksPage() {
                                                     </div>
                                                 )}
 
+                                                {task.topic && (
+                                                    <div className="flex flex-wrap gap-1 mt-1">
+                                                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-accent-dim text-accent border border-accent/50">
+                                                            {task.topic}
+                                                        </span>
+                                                    </div>
+                                                )}
+
                                                 {task.tags && task.tags.length > 0 && (
                                                     <div className="flex flex-wrap gap-1 mt-1">
                                                         {task.tags.map(tag => (
@@ -566,7 +634,7 @@ export default function TasksPage() {
                             </div>
                             <div className="flex items-center gap-2 shrink-0">
                                 <button
-                                    onClick={() => setEditingTask({ id: selectedTask.id, title: selectedTask.title, description: selectedTask.description || '', tags: selectedTask.tags || [] })}
+                                    onClick={() => setEditingTask({ id: selectedTask.id, title: selectedTask.title, description: selectedTask.description || '', tags: selectedTask.tags || [], topic: selectedTask.topic })}
                                     className="p-2 bg-well hover:bg-rim rounded-full transition-colors text-dim hover:text-accent"
                                     title="Edit task"
                                 >
@@ -767,6 +835,16 @@ export default function TasksPage() {
                                     rows={4}
                                     className="w-full bg-field border border-rim rounded-xl py-2.5 px-4 text-sm text-ink focus:outline-none focus:border-accent/50 resize-none placeholder:text-mute"
                                     placeholder={t('tasks.desc_placeholder')}
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-semibold text-mute mb-1">Topic</label>
+                                <input
+                                    type="text"
+                                    value={editingTask.topic || ''}
+                                    onChange={(e) => setEditingTask({ ...editingTask, topic: e.target.value })}
+                                    className="w-full bg-field border border-rim rounded-xl py-2 px-3 text-xs text-ink focus:outline-none focus:border-accent/50 placeholder:text-mute"
+                                    placeholder="e.g. hh, OpenClwList, Notion, client:Viora"
                                 />
                             </div>
                             <div>

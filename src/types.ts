@@ -82,4 +82,5 @@ export type TaskItem = {
   createdAt: number
   updatedAt: number
   tags?: string[]
+  topic?: string
 }
