@@ -109,9 +109,24 @@ app.get('/skill', (_req, res) => {
 
 app.post('/api/system/update', async (_req, res) => {
   try {
+    console.log('[ops-ui] Manual update triggered...')
+    // Save local changes
+    await execAsync('git stash')
+
+    // Pull changes
     const { stdout, stderr } = await execAsync('git pull')
+
+    // Restore local changes (if any)
+    try {
+      await execAsync('git stash pop')
+    } catch {
+      // Ignore errors from stash pop if there's nothing to pop or conflicts
+      console.warn('[ops-ui] git stash pop failed or nothing to pop.')
+    }
+
     res.json({ success: true, output: stdout || stderr })
   } catch (error: any) {
+    console.error('[ops-ui] Manual update failed:', error.message)
     res.status(500).json({ success: false, error: error.message })
   }
 })
@@ -171,7 +186,13 @@ setInterval(async () => {
       if (now - lastUpdateAt >= intervalMs) {
         console.log('[ops-ui] Running scheduled auto-update...')
         try {
+          await execAsync('git stash')
           await execAsync('git pull')
+          try {
+            await execAsync('git stash pop')
+          } catch {
+            // ignore
+          }
           settings.lastUpdateAt = now
           saveSettings(settings)
           console.log('[ops-ui] Auto-update completed successfully.')

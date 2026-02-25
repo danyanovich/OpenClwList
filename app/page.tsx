@@ -128,7 +128,7 @@ export default function DashboardPage() {
             <div className="fixed bottom-[-20%] right-[-10%] w-[50%] h-[50%] rounded-full bg-indigo-600/10 blur-[120px] pointer-events-none" />
 
             <div className="max-w-5xl mx-auto z-10 relative">
-                <header className="relative mb-12 text-center pt-8 md:pt-0">
+                <header className="relative mb-8 md:mb-12 text-center pt-12 md:pt-0">
                     <div className="md:absolute right-0 top-0 flex flex-col md:flex-row justify-center md:justify-end items-center gap-4 mb-6 md:mb-0">
                         <div className="flex bg-white/5 border border-white/10 rounded-full p-1">
                             <button
@@ -149,10 +149,10 @@ export default function DashboardPage() {
                             {connected ? t('app.connected') : t('app.offline')}
                         </span>
                     </div>
-                    <h1 className="text-5xl font-extrabold bg-gradient-to-br from-white to-gray-400 bg-clip-text text-transparent pb-2">
+                    <h1 className="text-4xl md:text-5xl font-extrabold bg-gradient-to-br from-white to-gray-400 bg-clip-text text-transparent pb-2 leading-tight">
                         {t('dashboard.title')}
                     </h1>
-                    <p className="mt-4 text-gray-400 text-lg flex items-center justify-center gap-2">
+                    <p className="mt-4 text-gray-400 text-base md:text-lg flex items-center justify-center gap-2 px-4">
                         {t('dashboard.subtitle')}
                     </p>
                 </header>
@@ -160,10 +160,10 @@ export default function DashboardPage() {
                 {/* Stats Grid */}
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-10">
                     {stats.map(s => (
-                        <div key={s.label} className={`${s.bg} border ${s.border} rounded-2xl p-5 flex flex-col items-center gap-2 backdrop-blur-xl`}>
+                        <div key={s.label} className={`${s.bg} border ${s.border} rounded-2xl p-4 md:p-5 flex flex-col items-center gap-2 backdrop-blur-xl`}>
                             <div className={s.color}>{s.icon}</div>
-                            <span className="text-3xl font-extrabold text-white">{loading ? '–' : s.value}</span>
-                            <span className={`text-xs font-medium uppercase tracking-wider ${s.color}`}>{s.label}</span>
+                            <span className="text-2xl md:text-3xl font-extrabold text-white">{loading ? '–' : s.value}</span>
+                            <span className={`text-[10px] md:text-xs font-medium uppercase tracking-wider ${s.color} text-center`}>{s.label}</span>
                         </div>
                     ))}
                 </div>
@@ -209,10 +209,10 @@ export default function DashboardPage() {
                                     <Bot className="w-6 h-6 text-indigo-400" />
                                 </div>
                                 <div>
-                                    <p className="text-lg font-medium text-gray-200 font-mono break-all md:break-normal">
+                                    <p className="text-base md:text-lg font-medium text-gray-200 font-mono break-all">
                                         {t('dashboard.quick_install_text').replace('{url}', skillUrl)}
                                     </p>
-                                    <p className="text-xs text-gray-500 mt-1 uppercase tracking-widest font-bold">
+                                    <p className="text-[10px] md:text-xs text-gray-500 mt-1 uppercase tracking-widest font-bold">
                                         {t('dashboard.quick_install_hint')}
                                     </p>
                                 </div>
@@ -223,7 +223,7 @@ export default function DashboardPage() {
                                     setCopied(true)
                                     setTimeout(() => setCopied(false), 2000)
                                 }}
-                                className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold transition-all shrink-0 ${copied ? 'bg-green-500 text-white' : 'bg-indigo-500 hover:bg-indigo-400 text-white shadow-lg shadow-indigo-500/20'}`}
+                                className={`flex items-center justify-center gap-2 px-6 py-3 rounded-xl font-bold transition-all shrink-0 w-full md:w-auto ${copied ? 'bg-green-500 text-white' : 'bg-indigo-500 hover:bg-indigo-400 text-white shadow-lg shadow-indigo-500/20'}`}
                             >
                                 {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
                                 {copied ? t('dashboard.copied') : t('dashboard.copy')}
@@ -242,10 +242,10 @@ export default function DashboardPage() {
                                     <p className="text-sm font-bold uppercase tracking-widest text-emerald-500 mb-1">
                                         {t('dashboard.run_background_title')}
                                     </p>
-                                    <p className="text-lg font-medium text-gray-200 font-mono break-all md:break-normal">
+                                    <p className="text-base md:text-lg font-medium text-gray-200 font-mono break-all">
                                         pm2 start npm --name OpenClwList -- run dev
                                     </p>
-                                    <p className="text-xs text-gray-500 mt-1 uppercase tracking-widest font-bold">
+                                    <p className="text-[10px] md:text-xs text-gray-500 mt-1 uppercase tracking-widest font-bold">
                                         {t('dashboard.pm2_hint')}
                                     </p>
                                 </div>
@@ -256,7 +256,7 @@ export default function DashboardPage() {
                                     setCopied(true)
                                     setTimeout(() => setCopied(false), 2000)
                                 }}
-                                className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold transition-all shrink-0 ${copied ? 'bg-green-500 text-white' : 'bg-emerald-500 hover:bg-emerald-400 text-white shadow-lg shadow-emerald-500/20'}`}
+                                className={`flex items-center justify-center gap-2 px-6 py-3 rounded-xl font-bold transition-all shrink-0 w-full md:w-auto ${copied ? 'bg-green-500 text-white' : 'bg-emerald-500 hover:bg-emerald-400 text-white shadow-lg shadow-emerald-500/20'}`}
                             >
                                 {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
                                 {copied ? t('dashboard.copied') : t('dashboard.copy')}
@@ -285,7 +285,7 @@ export default function DashboardPage() {
                                 <button
                                     onClick={handleUpdate}
                                     disabled={updating}
-                                    className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold transition-all shrink-0 ${updating ? 'bg-gray-700 text-gray-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-500 text-white shadow-lg shadow-blue-500/20'}`}
+                                    className={`flex items-center justify-center gap-2 px-6 py-3 rounded-xl font-bold transition-all shrink-0 w-full md:w-auto ${updating ? 'bg-gray-700 text-gray-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-500 text-white shadow-lg shadow-blue-500/20'}`}
                                 >
                                     {updating ? <Clock className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
                                     {updating ? t('dashboard.update_running') : t('dashboard.update_check')}
