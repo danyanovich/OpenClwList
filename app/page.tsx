@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { Activity, Bot, CheckCircle2, Clock, ListTodo, Zap, ArrowRight, Wifi, WifiOff, Copy, Check } from "lucide-react"
+import { Activity, Bot, CheckCircle2, Clock, ListTodo, Zap, ArrowRight, Wifi, WifiOff, Copy, Check, RefreshCw } from "lucide-react"
 import { useLanguage } from "./i18n/context"
 
 type TaskSummary = { planned: number; in_progress: number; review: number; done: number; total: number }
@@ -17,6 +17,9 @@ export default function DashboardPage() {
     const [updating, setUpdating] = useState(false)
     const [updateResult, setUpdateResult] = useState<{ success: boolean; output?: string; error?: string } | null>(null)
     const [skillUrl, setSkillUrl] = useState("")
+    const [autoUpdateEnabled, setAutoUpdateEnabled] = useState(false)
+    const [autoUpdateInterval, setAutoUpdateInterval] = useState(60)
+    const [savingSettings, setSavingSettings] = useState(false)
 
     useEffect(() => {
         if (typeof window !== "undefined") {
@@ -27,12 +30,14 @@ export default function DashboardPage() {
     useEffect(() => {
         async function load() {
             try {
-                const [tasksRes, sessionsRes] = await Promise.all([
+                const [tasksRes, sessionsRes, settingsRes] = await Promise.all([
                     fetch('/api/tasks'),
-                    fetch('/api/monitor/sessions')
+                    fetch('/api/monitor/sessions'),
+                    fetch('/api/system/settings')
                 ])
                 const tasksData = await tasksRes.json()
                 const sessionsData = await sessionsRes.json()
+                const settingsData = await settingsRes.json()
 
                 if (tasksData.tasks) {
                     const tasks = tasksData.tasks
@@ -45,6 +50,10 @@ export default function DashboardPage() {
                     })
                 }
                 if (sessionsData.sessions) setSessions(sessionsData.sessions)
+                if (settingsData.settings) {
+                    setAutoUpdateEnabled(settingsData.settings.autoUpdateEnabled)
+                    setAutoUpdateInterval(settingsData.settings.autoUpdateIntervalMinutes || 60)
+                }
             } catch (err) { console.error(err) }
             finally { setLoading(false) }
         }
@@ -77,6 +86,26 @@ export default function DashboardPage() {
             setUpdateResult({ success: false, error: err.message })
         } finally {
             setUpdating(false)
+        }
+    }
+
+    async function handleSaveSettings(enabled: boolean, interval: number) {
+        setSavingSettings(true)
+        try {
+            const res = await fetch('/api/system/settings', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ autoUpdateEnabled: enabled, autoUpdateIntervalMinutes: interval })
+            })
+            const data = await res.json()
+            if (data.settings) {
+                setAutoUpdateEnabled(data.settings.autoUpdateEnabled)
+                setAutoUpdateInterval(data.settings.autoUpdateIntervalMinutes)
+            }
+        } catch (err) {
+            console.error(err)
+        } finally {
+            setSavingSettings(false)
         }
     }
 
@@ -259,6 +288,37 @@ export default function DashboardPage() {
                                     )}
                                 </div>
                             )}
+
+                            <div className="w-full mt-2 pt-4 border-t border-blue-500/20 flex flex-col md:flex-row items-center justify-between gap-4">
+                                <div className="flex items-center gap-3">
+                                    <RefreshCw className="w-5 h-5 text-blue-400" />
+                                    <div className="text-left">
+                                        <p className="text-sm font-bold text-gray-200">Auto-Update</p>
+                                        <p className="text-xs text-gray-400">Automatically pull latest changes</p>
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-3">
+                                    <div className="flex items-center gap-2">
+                                        <input
+                                            type="number"
+                                            min="1"
+                                            value={autoUpdateInterval}
+                                            onChange={(e) => setAutoUpdateInterval(Number(e.target.value))}
+                                            onBlur={() => handleSaveSettings(autoUpdateEnabled, autoUpdateInterval)}
+                                            className="w-16 bg-white/5 border border-white/10 rounded-lg px-2 py-1 text-sm text-center outline-none focus:border-blue-500/50"
+                                            disabled={savingSettings}
+                                        />
+                                        <span className="text-xs text-gray-400">min</span>
+                                    </div>
+                                    <button
+                                        onClick={() => handleSaveSettings(!autoUpdateEnabled, autoUpdateInterval)}
+                                        disabled={savingSettings}
+                                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${autoUpdateEnabled ? 'bg-blue-600' : 'bg-gray-600'}`}
+                                    >
+                                        <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${autoUpdateEnabled ? 'translate-x-6' : 'translate-x-1'}`} />
+                                    </button>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>

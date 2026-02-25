@@ -116,6 +116,75 @@ app.post('/api/system/update', async (_req, res) => {
   }
 })
 
+// --- Settings API ---
+const SETTINGS_PATH = path.resolve(process.cwd(), 'data', 'settings.json')
+
+function getSettings() {
+  if (!fs.existsSync(SETTINGS_PATH)) {
+    return { autoUpdateEnabled: false, autoUpdateIntervalMinutes: 60, lastUpdateAt: 0 }
+  }
+  try {
+    return JSON.parse(fs.readFileSync(SETTINGS_PATH, 'utf8'))
+  } catch (e) {
+    return { autoUpdateEnabled: false, autoUpdateIntervalMinutes: 60, lastUpdateAt: 0 }
+  }
+}
+
+function saveSettings(settings: any) {
+  try {
+    fs.mkdirSync(path.dirname(SETTINGS_PATH), { recursive: true })
+    fs.writeFileSync(SETTINGS_PATH, JSON.stringify(settings, null, 2), 'utf8')
+  } catch (e) {
+    console.error('Failed to save settings:', e)
+  }
+}
+
+app.get('/api/system/settings', (_req, res) => {
+  res.json({ ok: true, settings: getSettings() })
+})
+
+app.post('/api/system/settings', (req, res) => {
+  try {
+    const current = getSettings()
+    const body = req.body || {}
+    const updated = {
+      ...current,
+      autoUpdateEnabled: typeof body.autoUpdateEnabled === 'boolean' ? body.autoUpdateEnabled : current.autoUpdateEnabled,
+      autoUpdateIntervalMinutes: typeof body.autoUpdateIntervalMinutes === 'number' ? body.autoUpdateIntervalMinutes : current.autoUpdateIntervalMinutes
+    }
+    saveSettings(updated)
+    res.json({ ok: true, settings: updated })
+  } catch (error: any) {
+    res.status(500).json({ ok: false, error: error.message })
+  }
+})
+
+// Background loop for auto-updates
+setInterval(async () => {
+  try {
+    const settings = getSettings()
+    if (settings.autoUpdateEnabled && settings.autoUpdateIntervalMinutes > 0) {
+      const now = Date.now()
+      const lastUpdateAt = settings.lastUpdateAt || 0
+      const intervalMs = settings.autoUpdateIntervalMinutes * 60 * 1000
+
+      if (now - lastUpdateAt >= intervalMs) {
+        console.log('[ops-ui] Running scheduled auto-update...')
+        try {
+          await execAsync('git pull')
+          settings.lastUpdateAt = now
+          saveSettings(settings)
+          console.log('[ops-ui] Auto-update completed successfully.')
+        } catch (err: any) {
+          console.error('[ops-ui] Auto-update failed:', err.message)
+        }
+      }
+    }
+  } catch (e) {
+    // ignore
+  }
+}, 60000) // Check every minute
+
 app.use(express.static(path.resolve(process.cwd(), 'public')))
 
 const MAX_SSE_CONNECTIONS = 50
