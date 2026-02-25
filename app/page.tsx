@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { Activity, Bot, CheckCircle2, Clock, ListTodo, Zap, ArrowRight, Wifi, WifiOff, Copy, Check, RefreshCw, Moon, Sun } from "lucide-react"
+import { Activity, Bot, CheckCircle2, Clock, ListTodo, Zap, ArrowRight, Copy, Check, RefreshCw } from "lucide-react"
 import { useLanguage } from "./i18n/context"
 
 type TaskSummary = { planned: number; in_progress: number; review: number; done: number; total: number }
@@ -11,7 +11,6 @@ export default function DashboardPage() {
     const { t, lang, setLang } = useLanguage()
     const [taskStats, setTaskStats] = useState<TaskSummary>({ planned: 0, in_progress: 0, review: 0, done: 0, total: 0 })
     const [sessions, setSessions] = useState<SessionInfo[]>([])
-    const [connected, setConnected] = useState(true)
     const [loading, setLoading] = useState(true)
     const [copied, setCopied] = useState(false)
     const [updating, setUpdating] = useState(false)
@@ -20,25 +19,6 @@ export default function DashboardPage() {
     const [autoUpdateEnabled, setAutoUpdateEnabled] = useState(false)
     const [autoUpdateInterval, setAutoUpdateInterval] = useState(60)
     const [savingSettings, setSavingSettings] = useState(false)
-    const [theme, setTheme] = useState<'light' | 'dark'>('dark')
-
-    useEffect(() => {
-        const savedTheme = localStorage.getItem('theme') as 'light' | 'dark' | null
-        if (savedTheme) {
-            setTheme(savedTheme)
-            document.documentElement.setAttribute('data-theme', savedTheme)
-        } else {
-            const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches
-            setTheme(isDark ? 'dark' : 'light')
-        }
-    }, [])
-
-    function toggleTheme() {
-        const next = theme === 'light' ? 'dark' : 'light'
-        setTheme(next)
-        document.documentElement.setAttribute('data-theme', next)
-        localStorage.setItem('theme', next)
-    }
 
     useEffect(() => {
         if (typeof window !== "undefined") {
@@ -77,21 +57,6 @@ export default function DashboardPage() {
             finally { setLoading(false) }
         }
         load()
-
-        let es: EventSource
-        let reconnectTimer: ReturnType<typeof setTimeout>
-        function connect() {
-            es = new EventSource('/api/monitor/events')
-            es.onopen = () => setConnected(true)
-            es.onmessage = () => { } // just keep alive
-            es.onerror = () => {
-                setConnected(false)
-                es.close()
-                reconnectTimer = setTimeout(connect, 3000)
-            }
-        }
-        connect()
-        return () => { es?.close(); clearTimeout(reconnectTimer) }
     }, [])
 
     async function handleUpdate() {
@@ -147,33 +112,7 @@ export default function DashboardPage() {
             <div className="fixed bottom-[-20%] right-[-10%] w-[50%] h-[50%] rounded-full bg-indigo-600/5 blur-[120px] pointer-events-none" />
 
             <div className="max-w-5xl mx-auto z-10 relative">
-                <header className="relative mb-8 md:mb-12 text-center pt-12 md:pt-0">
-                    <div className="md:absolute right-0 top-0 flex flex-col md:flex-row justify-center md:justify-end items-center gap-4 mb-6 md:mb-0">
-                        <div className="flex bg-panel border border-rim rounded-full p-1">
-                            <button
-                                onClick={() => setLang('en')}
-                                className={`px-3 py-1 rounded-full text-[10px] font-bold transition-all ${lang === 'en' ? 'bg-accent text-white shadow-lg shadow-accent/20' : 'text-mute hover:text-dim'}`}
-                            >
-                                EN
-                            </button>
-                            <button
-                                onClick={() => setLang('ru')}
-                                className={`px-3 py-1 rounded-full text-[10px] font-bold transition-all ${lang === 'ru' ? 'bg-accent text-white shadow-lg shadow-accent/20' : 'text-mute hover:text-dim'}`}
-                            >
-                                RU
-                            </button>
-                        </div>
-                        <button
-                            onClick={toggleTheme}
-                            className="bg-panel border border-rim hover:border-rim-hi p-2 rounded-full text-dim hover:text-ink transition-all"
-                        >
-                            {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
-                        </button>
-                        <span className={`inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1 rounded-full border transition-colors ${connected ? 'text-ok bg-ok-dim border-ok/20' : 'text-err bg-err-dim border-err/20'}`}>
-                            {connected ? <Wifi className="w-3.5 h-3.5" /> : <WifiOff className="w-3.5 h-3.5" />}
-                            {connected ? t('app.connected') : t('app.offline')}
-                        </span>
-                    </div>
+                <header className="relative mb-8 md:mb-12 text-center pt-8 md:pt-0">
                     <h1 className="text-4xl md:text-5xl font-extrabold bg-gradient-to-br from-ink to-dim bg-clip-text text-transparent pb-2 leading-tight">
                         {t('dashboard.title')}
                     </h1>

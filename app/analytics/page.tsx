@@ -2,8 +2,6 @@
 
 import { useEffect, useState } from "react"
 import { BarChart3, TrendingUp, DollarSign, Activity, ArrowLeft } from "lucide-react"
-import { ThemeToggle } from "../components/ThemeToggle"
-import { LanguageToggle } from "../components/LanguageToggle"
 import { useLanguage } from "../i18n/context"
 
 type AnalyticsData = {
@@ -60,10 +58,6 @@ export default function AnalyticsPage() {
                     <a href="/agents" className="inline-flex items-center gap-2 text-sm font-bold text-dim hover:text-ok transition-colors uppercase tracking-wider">
                         <ArrowLeft className="w-4 h-4" /> {t('app.back_nexus')}
                     </a>
-                    <div className="flex items-center gap-2">
-                        <LanguageToggle />
-                        <ThemeToggle />
-                    </div>
                 </div>
 
                 <header className="mb-12 border-b border-rim pb-8 flex flex-col md:flex-row md:justify-between items-start md:items-end gap-4">

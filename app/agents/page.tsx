@@ -3,9 +3,9 @@
 import { useEffect, useState, useRef } from "react"
 import { Trash2, Edit2, Bot, Server, Check, X, RefreshCw, Activity, TerminalSquare, Download, Copy, FileText, Archive } from "lucide-react"
 import JSZip from "jszip"
-import { ThemeToggle } from "../components/ThemeToggle"
-import { LanguageToggle } from "../components/LanguageToggle"
 import { useLanguage } from "../i18n/context"
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 
 type Agent = { id: string; name?: string; workspace?: string; agentDir?: string, role?: string, tags?: string[] }
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -18,6 +18,7 @@ export default function AgentsPage() {
     const [loading, setLoading] = useState(true)
     const [editingId, setEditingId] = useState<string | null>(null)
     const [editName, setEditName] = useState("")
+    const [viewingInstructions, setViewingInstructions] = useState<{ id: string, name: string, text: string } | null>(null)
     const [exportingId, setExportingId] = useState<string | null>(null)
     const [showExportMenu, setShowExportMenu] = useState<string | null>(null)
 
@@ -180,8 +181,6 @@ export default function AgentsPage() {
                         >
                             <RefreshCw className={`w-5 h-5 text-dim transition-colors ${loading ? 'animate-spin text-accent' : 'group-hover:text-ink'}`} />
                         </button>
-                        <LanguageToggle />
-                        <ThemeToggle />
                     </div>
                 </header>
 
@@ -263,6 +262,17 @@ export default function AgentsPage() {
                                                     </div>
 
                                                     <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                                                        <button
+                                                            onClick={() => setViewingInstructions({
+                                                                id: agent.id,
+                                                                name: agent.name || agent.id,
+                                                                text: (agent as any).instructions || ''
+                                                            })}
+                                                            title="View Instructions"
+                                                            className="p-2 bg-well hover:bg-rim rounded-xl text-dim hover:text-accent transition-colors border border-rim"
+                                                        >
+                                                            <FileText className="w-4 h-4" />
+                                                        </button>
                                                         <div className="relative">
                                                             <button
                                                                 onClick={() => setShowExportMenu(showExportMenu === agent.id ? null : agent.id)}
@@ -365,6 +375,52 @@ export default function AgentsPage() {
                     </div>
                 </section>
             </div>
+            {/* Instruction Viewer Modal */}
+            {viewingInstructions && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm" onClick={(e) => {
+                    if (e.target === e.currentTarget) setViewingInstructions(null)
+                }}>
+                    <div className="bg-panel border border-rim w-full max-w-3xl rounded-3xl shadow-2xl flex flex-col max-h-[85vh]">
+                        <div className="p-6 border-b border-rim flex justify-between items-center">
+                            <div className="flex items-center gap-3">
+                                <div className="p-2 bg-accent-dim rounded-xl text-accent">
+                                    <FileText className="w-5 h-5" />
+                                </div>
+                                <div>
+                                    <h2 className="text-xl font-bold text-ink leading-tight">{viewingInstructions.name}</h2>
+                                    <p className="text-[10px] uppercase font-bold text-mute tracking-widest mt-0.5">{t('schedules.prompt_badge')}</p>
+                                </div>
+                            </div>
+                            <button onClick={() => setViewingInstructions(null)} className="p-2 bg-well hover:bg-rim rounded-full transition-colors text-dim hover:text-ink">
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+
+                        <div className="p-8 select-text overflow-y-auto flex-1 text-sm custom-scrollbar bg-surface/30">
+                            {viewingInstructions.text ? (
+                                <div className="prose prose-sm max-w-none dark:prose-invert prose-pre:bg-well prose-pre:border prose-pre:border-rim prose-pre:rounded-xl prose-code:text-accent prose-a:text-accent leading-relaxed">
+                                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{viewingInstructions.text}</ReactMarkdown>
+                                </div>
+                            ) : (
+                                <div className="flex flex-col items-center justify-center py-20 text-mute">
+                                    <FileText className="w-12 h-12 mb-4 opacity-20" />
+                                    <p className="italic font-medium">{t('tasks.no_description')}</p>
+                                    <p className="text-[10px] mt-2 opacity-60 uppercase tracking-wider">No instruction.md found in agent directory</p>
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="p-4 border-t border-rim bg-well/30 flex justify-end">
+                            <button
+                                onClick={() => setViewingInstructions(null)}
+                                className="px-6 py-2 bg-panel hover:bg-well border border-rim rounded-xl text-sm font-bold text-dim hover:text-ink transition-colors"
+                            >
+                                {t('app.cancel')}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     )
 }

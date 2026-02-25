@@ -548,6 +548,33 @@ app.get('/api/agents', (_req, res) => {
     const config = getOpenClawConfig()
     const agentsList = config?.agents?.list || []
 
+    // Enhance agents with instructions
+    const enhancedAgents = agentsList.map((agent: any) => {
+      let instructions = ''
+      const agentPath = agent.workspace || agent.agentDir
+
+      if (agentPath) {
+        try {
+          // Normalize path for cross-platform compatibility
+          const normalizedPath = path.resolve(agentPath.replace(/\\/g, '/'))
+          if (fs.existsSync(normalizedPath)) {
+            // Priority: instruction.md > instructions.md > README.md
+            const files = ['instruction.md', 'instructions.md', 'README.md', 'README.MD', 'INSTRUCTIONS.MD']
+            for (const f of files) {
+              const fpath = path.join(normalizedPath, f)
+              if (fs.existsSync(fpath)) {
+                instructions = fs.readFileSync(fpath, 'utf8')
+                break
+              }
+            }
+          }
+        } catch (err) {
+          console.warn(`Could not read instructions for agent ${agent.id}:`, err)
+        }
+      }
+      return { ...agent, instructions }
+    })
+
     let subagentsRuns = {}
     if (fs.existsSync(OPENCLAW_SUBAGENTS_PATH)) {
       try {
@@ -556,7 +583,7 @@ app.get('/api/agents', (_req, res) => {
       } catch { }
     }
 
-    res.json({ ok: true, agents: agentsList, subagents: subagentsRuns })
+    res.json({ ok: true, agents: enhancedAgents, subagents: subagentsRuns })
   } catch (error) {
     res.status(500).json({ ok: false, error: error instanceof Error ? error.message : String(error) })
   }

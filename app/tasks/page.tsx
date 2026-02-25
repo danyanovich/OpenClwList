@@ -4,8 +4,6 @@ import { useEffect, useState, useRef, useCallback } from "react"
 import { Plus, CheckCircle, Circle, Activity, Clock, Trash2, Edit2, Bot, Info, Shield, AlertCircle, X, AlignLeft, Loader2, ListTodo, Pencil, Search, Wifi, WifiOff } from "lucide-react"
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { ThemeToggle } from "../components/ThemeToggle"
-import { LanguageToggle } from "../components/LanguageToggle"
 import { useLanguage } from "../i18n/context"
 
 type TaskStatus = 'planned' | 'in_progress' | 'review' | 'done' | 'waiting_approval'
@@ -49,7 +47,6 @@ export default function TasksPage() {
     const [editingTask, setEditingTask] = useState<{ id: string; title: string; description: string; tags: string[] } | null>(null)
     const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
     const [searchQuery, setSearchQuery] = useState("")
-    const [connected, setConnected] = useState(true)
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const [selectedTaskEvents, setSelectedTaskEvents] = useState<any[] | null>(null)
@@ -106,7 +103,6 @@ export default function TasksPage() {
 
         function connect() {
             es = new EventSource('/api/monitor/events')
-            es.onopen = () => setConnected(true)
             es.onmessage = (e) => {
                 try {
                     const data = JSON.parse(e.data)
@@ -119,7 +115,6 @@ export default function TasksPage() {
                 } catch (err) { }
             }
             es.onerror = () => {
-                setConnected(false)
                 es.close()
                 reconnectTimer = setTimeout(connect, 3000)
             }
@@ -327,10 +322,6 @@ export default function TasksPage() {
                         </h1>
                         <p className="text-dim text-lg flex items-center gap-2">
                             {t('tasks.subtitle')}
-                            <span className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full ${connected ? 'text-ok bg-ok-dim' : 'text-err bg-err-dim animate-pulse'}`}>
-                                {connected ? <Wifi className="w-3 h-3" /> : <WifiOff className="w-3 h-3" />}
-                                {connected ? t('app.live') : t('app.reconnecting')}
-                            </span>
                         </p>
                     </div>
                     <div className="flex items-center gap-4 w-full md:w-auto">
@@ -375,8 +366,6 @@ export default function TasksPage() {
                         <a href="/agents" className="px-5 py-2.5 bg-panel hover:bg-well rounded-full text-sm font-medium transition-colors border border-rim whitespace-nowrap hidden sm:block text-dim hover:text-ink">
                             {t('tasks.back_agents')}
                         </a>
-                        <LanguageToggle />
-                        <ThemeToggle />
                     </div>
                     {showDescField && (
                         <textarea

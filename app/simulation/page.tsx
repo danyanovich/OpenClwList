@@ -3,8 +3,6 @@
 import React from 'react'
 import { Visualization } from '../components/Visualization'
 import { Bot, Home, Settings, Activity, ArrowLeft } from 'lucide-react'
-import { ThemeToggle } from '../components/ThemeToggle'
-import { LanguageToggle } from '../components/LanguageToggle'
 import { useLanguage } from '../i18n/context'
 
 export default function SimulationPage() {
@@ -12,7 +10,7 @@ export default function SimulationPage() {
 
     return (
         <div className="min-h-screen bg-[#0d1017] text-gray-200 p-6 flex flex-col gap-6">
-            <header className="flex items-center justify-between border-b border-white/5 pb-4">
+            <header className="flex flex-col md:flex-row items-start md:items-center justify-between mb-8 border-b border-white/5 pb-6">
                 <div className="flex items-center gap-4">
                     <a href="/" className="p-2 hover:bg-white/5 rounded-lg transition-colors">
                         <ArrowLeft className="w-5 h-5" />
@@ -25,8 +23,7 @@ export default function SimulationPage() {
                         <p className="text-xs text-gray-500">Real-time tycoon-style agent monitor</p>
                     </div>
                 </div>
-                <div className="flex items-center gap-2">
-                    <ThemeToggle />
+                <div className="flex items-center gap-2 mt-4 md:mt-0">
                     <div className="px-3 py-1 bg-blue-500/10 border border-blue-500/20 text-blue-500 rounded-full text-[10px] font-bold uppercase tracking-wider animate-pulse">
                         Live Gateway Stream
                     </div>
