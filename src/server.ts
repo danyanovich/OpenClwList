@@ -531,6 +531,7 @@ gateway.onEvent((evt) => {
 
 const OPENCLAW_CONFIG_PATH = process.env.OPENCLAW_CONFIG_PATH?.trim() || path.join(os.homedir(), '.openclaw', 'openclaw.json')
 const OPENCLAW_SUBAGENTS_PATH = path.join(os.homedir(), '.openclaw', 'subagents', 'runs.json')
+const OPENCLAW_AGENTS_DIR = path.join(os.homedir(), '.openclaw', 'agents')
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function getOpenClawConfig(): any {
@@ -543,13 +544,45 @@ function saveOpenClawConfig(config: any): void {
   fs.writeFileSync(OPENCLAW_CONFIG_PATH, JSON.stringify(config, null, 2), 'utf8')
 }
 
+// Discover agents from filesystem (fallback for agents not listed in config)
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function discoverAgentsFromFs(): any[] {
+  const discovered: any[] = []
+  if (!fs.existsSync(OPENCLAW_AGENTS_DIR)) return discovered
+
+  const entries = fs.readdirSync(OPENCLAW_AGENTS_DIR, { withFileTypes: true })
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue
+    const id = entry.name
+    const workspace = path.join(OPENCLAW_AGENTS_DIR, id)
+
+    discovered.push({
+      id,
+      name: id === 'main' ? 'Main' : id,
+      workspace,
+      role: id === 'main' ? 'Primary agent' : undefined,
+      tags: id === 'main' ? ['builtin', 'primary'] : undefined,
+    })
+  }
+  return discovered
+}
+
 app.get('/api/agents', (_req, res) => {
   try {
     const config = getOpenClawConfig()
-    const agentsList = config?.agents?.list || []
+    const configAgents = (config?.agents?.list || []) as any[]
+    const fsAgents = discoverAgentsFromFs()
+
+    // Merge config agents with filesystem agents (config has priority)
+    const mergedAgents: any[] = [...configAgents]
+    for (const fsAgent of fsAgents) {
+      if (!mergedAgents.some(a => a.id === fsAgent.id)) {
+        mergedAgents.push(fsAgent)
+      }
+    }
 
     // Enhance agents with instructions
-    const enhancedAgents = agentsList.map((agent: any) => {
+    const enhancedAgents = mergedAgents.map((agent: any) => {
       let instructions = ''
       const agentPath = agent.workspace || agent.agentDir
 
