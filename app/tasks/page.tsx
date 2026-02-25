@@ -48,6 +48,9 @@ export default function TasksPage() {
     const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
     const [searchQuery, setSearchQuery] = useState("")
 
+    // Agents metadata (for mapping sessionKey -> agent name)
+    const [agentsById, setAgentsById] = useState<Record<string, { id: string; name?: string; role?: string }>>({})
+
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const [selectedTaskEvents, setSelectedTaskEvents] = useState<any[] | null>(null)
     const [loadingEvents, setLoadingEvents] = useState(false)
@@ -76,9 +79,10 @@ export default function TasksPage() {
     const loadTasks = async () => {
         try {
             setLoading(true)
-            const [tasksRes, sessionsRes] = await Promise.all([
+            const [tasksRes, sessionsRes, agentsRes] = await Promise.all([
                 fetch('/api/tasks'),
-                fetch('/api/monitor/sessions')
+                fetch('/api/monitor/sessions'),
+                fetch('/api/agents'),
             ])
             const tasksData = await tasksRes.json()
             if (tasksData.tasks) {
@@ -87,6 +91,15 @@ export default function TasksPage() {
             const sessionsData = await sessionsRes.json()
             if (sessionsData.sessions) {
                 setSessions(sessionsData.sessions)
+            }
+            const agentsData = await agentsRes.json()
+            if (agentsData.ok && Array.isArray(agentsData.agents)) {
+                const byId: Record<string, { id: string; name?: string; role?: string }> = {}
+                for (const a of agentsData.agents) {
+                    if (!a || typeof a.id !== 'string') continue
+                    byId[a.id] = { id: a.id, name: a.name, role: a.role }
+                }
+                setAgentsById(byId)
             }
         } catch (err) {
             console.error(err)
@@ -350,10 +363,24 @@ export default function TasksPage() {
                                 disabled={isAdding}
                                 title="Default Agent Session"
                             >
-                                <option value="agent:main:main">agent:main:main</option>
-                                {sessions.filter(s => s.sessionKey !== 'agent:main:main').map(s => (
-                                    <option key={s.sessionKey} value={s.sessionKey}>{s.sessionKey}</option>
-                                ))}
+                                {/* Default main session */}
+                                <option value="agent:main:main">
+                                    {agentsById['main']?.name || 'Main'} (agent:main:main)
+                                </option>
+                                {sessions
+                                    .filter(s => s.sessionKey !== 'agent:main:main')
+                                    .map(s => {
+                                        const sk = s.sessionKey
+                                        const match = /^agent:([^:]+):/.exec(sk)
+                                        const agentId = match?.[1]
+                                        const agentMeta = agentId ? agentsById[agentId] : undefined
+                                        const label = agentMeta?.name
+                                            ? `${agentMeta.name} (${sk})`
+                                            : sk
+                                        return (
+                                            <option key={sk} value={sk}>{label}</option>
+                                        )
+                                    })}
                             </select>
                         </form>
                         <button
@@ -478,6 +505,24 @@ export default function TasksPage() {
                                                                 {tag}
                                                             </span>
                                                         ))}
+                                                    </div>
+                                                )}
+
+                                                {task.sessionKey && (
+                                                    <div className="flex items-center justify-between mt-1 text-[10px] text-mute">
+                                                        <div className="flex items-center gap-1">
+                                                            <Wifi className="w-3 h-3" />
+                                                            {(() => {
+                                                                const sk = task.sessionKey || ''
+                                                                const match = /^agent:([^:]+):/.exec(sk)
+                                                                const agentId = match?.[1]
+                                                                const agentMeta = agentId ? agentsById[agentId] : undefined
+                                                                const label = agentMeta?.name
+                                                                    ? `${agentMeta.name} (${sk})`
+                                                                    : sk
+                                                                return <span className="truncate max-w-[220px]">{label}</span>
+                                                            })()}
+                                                        </div>
                                                     </div>
                                                 )}
                                             </div>
