@@ -9,7 +9,7 @@ type SessionLite = { sessionKey: string; agentId: string; status: string; lastAc
 
 type AgentMeta = { id: string; name?: string; role?: string }
 
-type RecentActivity = { ts: number; text: string }
+type RecentActivity = { ts: number; text: string; sessionKey?: string; kind?: string; toolName?: string }
 
 export default function SimulationPage() {
     const { t } = useLanguage()
@@ -17,16 +17,18 @@ export default function SimulationPage() {
     const [sessions, setSessions] = useState<SessionLite[]>([])
     const [agentsById, setAgentsById] = useState<Record<string, AgentMeta>>({})
     const [activities, setActivities] = useState<RecentActivity[]>([])
+    const [logicLoad, setLogicLoad] = useState<number | undefined>(undefined)
 
     useEffect(() => {
         let cancelled = false
 
         const load = async () => {
             try {
-                const [sessionsRes, agentsRes, diagRes] = await Promise.all([
+                const [sessionsRes, agentsRes, diagRes, runsRes] = await Promise.all([
                     fetch('/api/monitor/sessions'),
                     fetch('/api/agents'),
                     fetch('/api/monitor/diagnostics'),
+                    fetch('/api/monitor/runs'),
                 ])
 
                 if (cancelled) return
@@ -69,9 +71,19 @@ export default function SimulationPage() {
                             let label = kind
                             if (tool) label += `:${tool}`
                             const text = `${base} ${sessionKey} · ${label}`
-                            return { ts, text }
+                            return { ts, text, sessionKey, kind, toolName: tool }
                         })
                     setActivities(acts)
+                }
+
+                const runsJson = await runsRes.json()
+                if (Array.isArray(runsJson.runs)) {
+                    const running = runsJson.runs.filter((r: any) => r.state === 'running')
+                    // простая эвристика: 0–10 running → 0–100%
+                    const load = Math.max(0, Math.min(100, running.length * 10))
+                    setLogicLoad(load)
+                } else {
+                    setLogicLoad(undefined)
                 }
             } catch (err) {
                 console.error('[simulation] load error', err)
@@ -102,6 +114,53 @@ export default function SimulationPage() {
             return acc
         }, {}),
     )
+
+    // Map recent activities to stations per agent
+    type Station = 'chat' | 'tasks' | 'tools' | 'browser' | 'db' | 'cron' | 'system'
+    const agentStations: { agentId: string; station: Station; lastLabel?: string }[] = (() => {
+        if (sessions.length === 0 || activities.length === 0) return []
+
+        const sessionAgentMap = sessions.reduce<Record<string, string>>((acc, s) => {
+            if (s.sessionKey && s.agentId) acc[s.sessionKey] = s.agentId
+            return acc
+        }, {})
+
+        const stationByAgent = new Map<string, Station>()
+
+        for (const a of activities) {
+            const sk = a.sessionKey || ''
+            const agentId = sessionAgentMap[sk]
+            if (!agentId) continue
+
+            const kind = (a.kind || '').toLowerCase()
+            const tool = (a.toolName || '').toLowerCase()
+
+            let station: Station = 'system'
+            if (kind === 'chat') station = 'chat'
+            if (kind === 'tool' || tool) {
+                if (tool.includes('browser')) station = 'browser'
+                else if (tool.startsWith('cron') || tool.includes('schedule')) station = 'cron'
+                else if (tool.includes('db') || tool.includes('sqlite')) station = 'db'
+                else station = 'tools'
+            }
+            // tasks: грубо считаем, что любые события с "task" в tool/kind → TASKS
+            if (tool.includes('task') || kind.includes('task')) station = 'tasks'
+
+            const last = stationByAgent.get(agentId)
+            // сохраняем только последнее по времени (activities уже отсортированы свежим сверху)
+            if (!last || last[1] !== station) {
+                stationByAgent.set(agentId, station)
+            }
+        }
+
+        return Array.from(stationByAgent.entries()).map(([agentId, station]) => {
+            const lastActivity = activities.find(a => {
+                const sk = a.sessionKey || ''
+                return sessionAgentMap[sk] === agentId
+            })
+            return { agentId, station, lastLabel: lastActivity?.text }
+        })
+    })()
 
     return (
         <div className="min-h-screen bg-[#0d1017] text-gray-200 p-6 flex flex-col gap-6">
@@ -175,7 +234,7 @@ export default function SimulationPage() {
 
                 {/* Main Simulation View */}
                 <div className="lg:col-span-3">
-                    <Visualization agents={activeAgents} />
+                    <Visualization agents={activeAgents} activities={agentStations} logicLoad={logicLoad} />
                 </div>
             </main>
 

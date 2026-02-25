@@ -21,11 +21,50 @@ export type VisualizationAgentInput = {
     status: 'idle' | 'active' | 'thinking'
 }
 
-interface VisualizationProps {
-    agents: VisualizationAgentInput[]
+export type VisualizationActivityInput = {
+    agentId: string
+    station: 'chat' | 'tasks' | 'tools' | 'browser' | 'db' | 'cron' | 'system'
+    lastLabel?: string
 }
 
-export const Visualization: React.FC<VisualizationProps> = ({ agents: inputAgents }) => {
+interface VisualizationProps {
+    agents: VisualizationAgentInput[]
+    activities?: VisualizationActivityInput[]
+    logicLoad?: number
+}
+
+// Fixed station coordinates in world space
+const STATIONS: Record<VisualizationActivityInput['station'], Point> = {
+    chat: { x: 140, y: 320 },      // Chat hub
+    tasks: { x: 420, y: 320 },     // Tasks & runs
+    tools: { x: 280, y: 180 },     // Tools & integrations
+    browser: { x: 560, y: 180 },   // Browser relay
+    db: { x: 560, y: 420 },        // Storage / DB
+    cron: { x: 420, y: 80 },       // Cron / schedules
+    system: { x: 140, y: 80 },     // System / diagnostics
+}
+
+const STATION_LABEL: Record<VisualizationActivityInput['station'], string> = {
+    chat: 'CHAT',
+    tasks: 'TASKS',
+    tools: 'TOOLS',
+    browser: 'BROWSER',
+    db: 'DB',
+    cron: 'CRON',
+    system: 'SYSTEM',
+}
+
+const STATION_BADGE_CLASS: Record<VisualizationActivityInput['station'], string> = {
+    chat: 'bg-blue-500/20 text-blue-300',
+    tasks: 'bg-emerald-500/20 text-emerald-300',
+    tools: 'bg-indigo-500/20 text-indigo-300',
+    browser: 'bg-cyan-500/20 text-cyan-300',
+    db: 'bg-amber-500/20 text-amber-300',
+    cron: 'bg-purple-500/20 text-purple-300',
+    system: 'bg-slate-500/30 text-slate-200',
+}
+
+export const Visualization: React.FC<VisualizationProps> = ({ agents: inputAgents, activities = [] }) => {
     const [zoom, setZoom] = useState(1)
     const [offset, setOffset] = useState<Point>({ x: 0, y: 0 })
     const containerRef = useRef<HTMLDivElement>(null)
@@ -34,54 +73,54 @@ export const Visualization: React.FC<VisualizationProps> = ({ agents: inputAgent
 
     const [agents, setAgents] = useState<Agent[]>([])
 
-    // lay out incoming agents on a loose grid when list changes
+    // lay out incoming agents and align their targets to activity stations
     useEffect(() => {
         const baseX = 120
         const baseY = 140
         const gapX = 220
         const gapY = 160
+
+        const activityByAgent = activities.reduce<Record<string, VisualizationActivityInput>>((acc, act) => {
+            acc[act.agentId] = act
+            return acc
+        }, {})
+
         const next: Agent[] = inputAgents.map((a, idx) => {
             const row = Math.floor(idx / 3)
             const col = idx % 3
+            const defaultPos: Point = {
+                x: baseX + col * gapX,
+                y: baseY + row * gapY,
+            }
+            const activity = activityByAgent[a.id]
+            const station = activity?.station
+            const targetPos = station ? STATIONS[station] : defaultPos
             return {
                 id: a.id,
                 name: a.name,
                 status: a.status,
-                pos: {
-                    x: baseX + col * gapX + (Math.random() * 40 - 20),
-                    y: baseY + row * gapY + (Math.random() * 30 - 15),
-                },
+                pos: defaultPos,
+                targetPos,
             }
         })
         setAgents(next)
-    }, [JSON.stringify(inputAgents)])
+    }, [JSON.stringify(inputAgents), JSON.stringify(activities)])
 
-    // Move targets for "Walking" effect
-    const [targets, setTargets] = useState<Record<string, Point>>({})
-
+    // Move agents smoothly toward their target stations
     useEffect(() => {
         const interval = setInterval(() => {
             setAgents(prev => prev.map(a => {
-                const target = targets[a.id] || a.pos
+                const target = a.targetPos || a.pos
                 const dx = target.x - a.pos.x
                 const dy = target.y - a.pos.y
                 const dist = Math.sqrt(dx * dx + dy * dy)
 
-                if (dist < 5) {
-                    // Reached target, pick new one if idle
-                    if (a.status === 'idle') {
-                        setTargets(prevT => ({
-                            ...prevT,
-                            [a.id]: { x: Math.random() * 800, y: Math.random() * 600 }
-                        }))
-                    } else if (a.status === 'active') {
-                        // Active agents stay at workstations (Server Rack placeholders for now)
-                        setTargets(prevT => ({ ...prevT, [a.id]: { x: 200, y: 150 } }))
-                    }
-                    return a
+                if (dist < 4) {
+                    // Snap to target when close enough
+                    return { ...a, pos: target }
                 }
 
-                const moveSpeed = 2
+                const moveSpeed = 2.2
                 return {
                     ...a,
                     pos: {
@@ -92,7 +131,7 @@ export const Visualization: React.FC<VisualizationProps> = ({ agents: inputAgent
             }))
         }, 50)
         return () => clearInterval(interval)
-    }, [targets])
+    }, [])
 
     const onMouseDown = (e: React.MouseEvent) => {
         setIsDragging(true)
@@ -167,8 +206,30 @@ export const Visualization: React.FC<VisualizationProps> = ({ agents: inputAgent
                         style={{ left: agent.pos.x, top: agent.pos.y, transition: 'all 0.05s linear' }}
                     >
                         {/* Status Indicator */}
-                        <div className="absolute -top-12 opacity-0 group-hover:opacity-100 transition-opacity bg-black/90 text-[10px] px-2 py-1 rounded-md border border-white/10 whitespace-nowrap z-50 shadow-lg">
-                            {agent.status.toUpperCase()}
+                        <div className="absolute -top-14 opacity-0 group-hover:opacity-100 transition-opacity bg-black/90 text-[10px] px-3 py-1.5 rounded-md border border-white/10 whitespace-nowrap z-50 shadow-lg flex flex-col items-start gap-0.5">
+                            <div className="font-bold tracking-wide text-gray-100 flex items-center gap-2">
+                                <span>{agent.status.toUpperCase()}</span>
+                                {activities && activities.length > 0 && (() => {
+                                    const act = activities.find(a => a.agentId === agent.id)
+                                    if (!act) return null
+                                    const badge = STATION_BADGE_CLASS[act.station]
+                                    const label = STATION_LABEL[act.station]
+                                    return (
+                                        <span className={`px-2 py-0.5 rounded-full text-[9px] font-semibold ${badge}`}>
+                                            {label}
+                                        </span>
+                                    )
+                                })()}
+                            </div>
+                            {activities && activities.length > 0 && (() => {
+                                const act = activities.find(a => a.agentId === agent.id)
+                                if (!act?.lastLabel) return null
+                                return (
+                                    <div className="text-[9px] text-gray-400 max-w-xs truncate">
+                                        {act.lastLabel}
+                                    </div>
+                                )
+                            })()}
                         </div>
 
                         {/* Agent "Pixel" Body - more detailed, Stardew-like */}
@@ -233,15 +294,67 @@ export const Visualization: React.FC<VisualizationProps> = ({ agents: inputAgent
             <div className="absolute top-6 left-6 flex flex-col gap-2">
                 <div className="bg-black/60 backdrop-blur-xl border border-white/10 p-3 rounded-2xl">
                     <div className="text-[10px] uppercase tracking-widest text-gray-500 font-bold mb-1">Total Logic Load</div>
-                    <div className="text-xl font-mono text-blue-400">84%</div>
+                    <div className="text-xl font-mono text-blue-400">{typeof logicLoad === 'number' ? `${Math.round(logicLoad)}%` : '—'}</div>
+                </div>
+
+                {/* Station Legend */}
+                <div className="bg-black/70 backdrop-blur-xl border border-white/10 p-3 rounded-2xl mt-1 min-w-[190px]">
+                    <div className="text-[10px] uppercase tracking-widest text-gray-500 font-bold mb-2">Stations</div>
+                    <div className="space-y-1.5 text-[10px] text-gray-300">
+                        <div className="flex items-center justify-between">
+                            <span>CHAT</span>
+                            <span className="text-gray-500">User / Agent chat</span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                            <span>TASKS</span>
+                            <span className="text-gray-500">Tasks &amp; runs</span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                            <span>TOOLS</span>
+                            <span className="text-gray-500">Tools &amp; integrations</span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                            <span>BROWSER</span>
+                            <span className="text-gray-500">Browser relay</span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                            <span>DB</span>
+                            <span className="text-gray-500">Storage / DB</span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                            <span>CRON</span>
+                            <span className="text-gray-500">Schedules</span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                            <span>SYSTEM</span>
+                            <span className="text-gray-500">Diagnostics</span>
+                        </div>
+                    </div>
                 </div>
             </div>
 
             <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex bg-black/40 backdrop-blur-2xl border border-white/5 p-1.5 rounded-2xl shadow-2xl">
-                <div className="flex items-center gap-1 px-3 border-r border-white/10 mr-2">
-                    <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-                    <span className="text-[10px] uppercase font-bold text-gray-400">Stable</span>
-                </div>
+                {(() => {
+                    const load = typeof logicLoad === 'number' ? logicLoad : 0
+                    let dot = 'bg-green-500'
+                    let label = 'Stable'
+                    let text = 'text-gray-400'
+                    if (load >= 70) {
+                        dot = 'bg-red-500'
+                        label = 'Hot'
+                        text = 'text-red-300'
+                    } else if (load >= 40) {
+                        dot = 'bg-amber-500'
+                        label = 'Busy'
+                        text = 'text-amber-300'
+                    }
+                    return (
+                        <div className="flex items-center gap-1 px-3 border-r border-white/10 mr-2">
+                            <div className={`w-2 h-2 rounded-full ${dot} animate-pulse`} />
+                            <span className={`text-[10px] uppercase font-bold ${text}`}>{label}</span>
+                        </div>
+                    )
+                })()}
                 <div className="flex gap-1">
                     <button onClick={() => setZoom(z => Math.min(3, z + 0.2))} className="w-8 h-8 flex items-center justify-center bg-white/5 hover:bg-white/10 rounded-xl transition-colors text-white">+</button>
                     <button onClick={() => setZoom(z => Math.max(0.3, z - 0.2))} className="w-8 h-8 flex items-center justify-center bg-white/5 hover:bg-white/10 rounded-xl transition-colors text-white">-</button>
