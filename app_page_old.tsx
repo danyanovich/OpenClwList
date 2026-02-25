@@ -370,9 +370,6 @@ export default function DashboardPage() {
                     <a href="/agents" className="flex items-center justify-center gap-2 px-8 py-3.5 rounded-full bg-panel hover:bg-well transition-all text-ink font-semibold border border-rim hover:scale-105">
                         <Bot className="w-5 h-5" /> {t('dashboard.manage_agents')} <ArrowRight className="w-4 h-4" />
                     </a>
-                    <a href="/simulation" className="flex items-center justify-center gap-2 px-8 py-3.5 rounded-full bg-blue-600/10 hover:bg-blue-600/20 transition-all text-blue-500 font-semibold border border-blue-500/20 hover:scale-105">
-                        <Activity className="w-5 h-5" /> {t('dashboard.simulation_hub') || 'Simulation Hub'} <ArrowRight className="w-4 h-4" />
-                    </a>
                 </div>
             </div>
         </div>
