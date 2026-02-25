@@ -27,7 +27,7 @@ OpenClaw Gateway  ──ws──►  OpenClwList Backend (Express + SQLite)
 
 Paste this into your **OpenClaw Agent** to install the dashboard's capabilities instantly:
 
-> **Install OpenClwList for me! https://raw.githubusercontent.com/danyanovich/clawproject/main/OpenClwList/public/skill.md**
+> **Install OpenClwList for me! https://raw.githubusercontent.com/danyanovich/OpenClwList/main/public/skill.md**
 
 ---
 
