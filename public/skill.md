@@ -1,8 +1,8 @@
 ---
 name: OpenClwList
 description: Operational monitor for OpenClaw Gateway. Manage tasks, agents, and analytics.
-version: 0.02
-homepage: https://github.com/danyanovich/clawproject
+version: 0.03
+homepage: https://github.com/danyanovich/OpenClwList
 ---
 
 # OpenClwList Skill
@@ -29,11 +29,19 @@ The agent can interact with the following local endpoints (default `http://127.0
 
 If the user asks to "install", "deploy", or "run" this dashboard, follow these steps:
 
-1. **Clone**: `git clone https://github.com/danyanovich/clawproject.git`
-2. **Setup**: `cd clawproject && npm install`
+1. **Clone**: `git clone https://github.com/danyanovich/OpenClwList.git`
+2. **Setup**: `cd OpenClwList && npm install`
 3. **Configure**: `cp .env.example .env.local`
 4. **Run (Foreground)**: `npm run dev`
 5. **Run (Background)**: `npm install -g pm2 && pm2 start npm --name OpenClwList -- run dev`
+
+## Update Instructions
+
+If the user asks to "update" or "upgrade" this dashboard, execute these commands from the `OpenClwList` directory:
+
+1. `git pull`
+2. `npm install`
+3. `pm2 restart OpenClwList` (if running via PM2, otherwise ask the user to restart `npm run dev`)
 
 ## Operational Guide
 

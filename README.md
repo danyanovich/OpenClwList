@@ -6,7 +6,7 @@
 
 ## Overview
 
-OpenClwList is a self-hosted web interface that connects to a running [OpenClaw Gateway](https://github.com/danyanovich/clawproject) instance via WebSocket and gives you a real-time operational window into your AI agent fleet.
+OpenClwList is a self-hosted web interface that connects to a running [OpenClaw Gateway](https://github.com/danyanovich/OpenClwList) instance via WebSocket and gives you a real-time operational window into your AI agent fleet.
 
 ```
 OpenClaw Gateway  ──ws──►  OpenClwList Backend (Express + SQLite)
@@ -53,8 +53,8 @@ Paste this into your **OpenClaw Agent** to install the dashboard's capabilities 
 
 ```bash
 # 1. Clone and install
-git clone https://github.com/danyanovich/clawproject.git
-cd clawproject
+git clone https://github.com/danyanovich/OpenClwList.git
+cd OpenClwList
 npm install
 
 # 2. Configure
