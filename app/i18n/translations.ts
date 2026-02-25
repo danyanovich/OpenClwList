@@ -28,6 +28,9 @@ export const translations = {
         'dashboard.quick_install_hint': 'Paste this URL to your OpenClaw Agent',
         'dashboard.copy': 'Copy',
         'dashboard.copied': 'Copied!',
+        'dashboard.run_background_title': 'Run in Background (Production)',
+        'dashboard.run_background_text': 'Run OpenClwList in the background: {cmd}',
+        'dashboard.pm2_hint': 'Assumes PM2 is installed: npm install -g pm2',
 
         // Agents
         'agents.title': 'OpenClaw Nexus',
@@ -152,6 +155,9 @@ export const translations = {
         'dashboard.quick_install_hint': 'Вставьте эту ссылку вашему OpenClaw агенту',
         'dashboard.copy': 'Копировать',
         'dashboard.copied': 'Скопировано!',
+        'dashboard.run_background_title': 'Запуск в фоне (Production)',
+        'dashboard.run_background_text': 'Запустить OpenClwList в фоне: {cmd}',
+        'dashboard.pm2_hint': 'Требуется PM2: npm install -g pm2',
 
         // Agents
         'agents.title': 'OpenClaw Nexus',

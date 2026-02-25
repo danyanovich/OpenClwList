@@ -32,7 +32,8 @@ If the user asks to "install", "deploy", or "run" this dashboard, follow these s
 1. **Clone**: `git clone https://github.com/danyanovich/clawproject.git`
 2. **Setup**: `cd clawproject && npm install`
 3. **Configure**: `cp .env.example .env.local`
-4. **Run**: `npm run dev` (starts on port 3010 by default)
+4. **Run (Foreground)**: `npm run dev`
+5. **Run (Background)**: `npm install -g pm2 && pm2 start npm --name OpenClwList -- run dev`
 
 ## Operational Guide
 

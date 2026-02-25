@@ -165,6 +165,39 @@ export default function DashboardPage() {
                             </button>
                         </div>
                     </div>
+
+                    <div className="max-w-2xl mx-auto mt-4 bg-emerald-500/5 border border-emerald-500/20 rounded-2xl p-6 backdrop-blur-xl relative overflow-hidden group">
+                        <div className="absolute top-0 left-0 w-1 h-full bg-emerald-500/40" />
+                        <div className="flex flex-col md:flex-row items-center justify-between gap-6">
+                            <div className="flex items-center gap-4 flex-1 text-left">
+                                <div className="w-12 h-12 rounded-xl bg-emerald-500/10 flex items-center justify-center shrink-0 border border-emerald-500/20">
+                                    <Zap className="w-6 h-6 text-emerald-400" />
+                                </div>
+                                <div>
+                                    <p className="text-sm font-bold uppercase tracking-widest text-emerald-500 mb-1">
+                                        {t('dashboard.run_background_title')}
+                                    </p>
+                                    <p className="text-lg font-medium text-gray-200 font-mono break-all md:break-normal">
+                                        pm2 start npm --name OpenClwList -- run dev
+                                    </p>
+                                    <p className="text-xs text-gray-500 mt-1 uppercase tracking-widest font-bold">
+                                        {t('dashboard.pm2_hint')}
+                                    </p>
+                                </div>
+                            </div>
+                            <button
+                                onClick={() => {
+                                    navigator.clipboard.writeText("pm2 start npm --name OpenClwList -- run dev")
+                                    setCopied(true)
+                                    setTimeout(() => setCopied(false), 2000)
+                                }}
+                                className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold transition-all shrink-0 ${copied ? 'bg-green-500 text-white' : 'bg-emerald-500 hover:bg-emerald-400 text-white shadow-lg shadow-emerald-500/20'}`}
+                            >
+                                {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                                {copied ? t('dashboard.copied') : t('dashboard.copy')}
+                            </button>
+                        </div>
+                    </div>
                 </div>
 
                 {/* Quick Actions */}
