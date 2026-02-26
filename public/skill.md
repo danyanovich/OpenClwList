@@ -7,7 +7,7 @@ homepage: https://github.com/danyanovich/OpenClwList
 
 # OpenClwList Skill
 
-This skill allows the agent to interact with the OpenClwList dashboard to manage tasks, monitor sessions, and view analytics. It also contains instructions for automated local deployment.
+This skill allows the agent to interact with the OpenClwList dashboard to manage tasks, monitor sessions, and view analytics. It also contains instructions for local/remote deployment.
 
 ## Capabilities
 
@@ -31,9 +31,9 @@ If the user asks to "install", "deploy", or "run" this dashboard, follow these s
 
 1. **Clone**: `git clone https://github.com/danyanovich/OpenClwList.git`
 2. **Setup**: `cd OpenClwList && npm install`
-3. **Configure**: `cp .env.example .env.local`
-4. **Run (Foreground)**: `npm run dev`
-5. **Run (Background)**: `npm install -g pm2 && pm2 start npm --name OpenClwList -- run dev`
+3. **Run Local (recommended)**: `npm run run:local`
+4. **Run Remote (recommended)**: `npm run run:remote`
+5. **First-Run Setup (browser)**: open the dashboard and complete the setup wizard (create dashboard token + optionally paste OpenClaw gateway token)
 
 ## Update Instructions
 
@@ -41,10 +41,11 @@ If the user asks to "update" or "upgrade" this dashboard, execute these commands
 
 1. `git pull`
 2. `npm install`
-3. `pm2 restart OpenClwList` (if running via PM2, otherwise ask the user to restart `npm run dev`)
+3. Restart the process (`npm run run:local`, `npm run run:remote`, or `pm2 restart OpenClwList`)
 
 ## Operational Guide
 
 - When asked to "monitor tasks" or "check analytics", use the provided APIs.
 - If the server is not reachable, advise the user to run it first using the Deployment Instructions above.
+- If the user is in remote mode and sees an auth screen, they must enter the dashboard access token (not the OpenClaw gateway token).
 - Confirm setup status by checking `GET /api/monitor/diagnostics`.

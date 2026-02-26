@@ -64,7 +64,7 @@ const STATION_BADGE_CLASS: Record<VisualizationActivityInput['station'], string>
     system: 'bg-slate-500/30 text-slate-200',
 }
 
-export const Visualization: React.FC<VisualizationProps> = ({ agents: inputAgents, activities = [] }) => {
+export const Visualization: React.FC<VisualizationProps> = ({ agents: inputAgents, activities = [], logicLoad }) => {
     const [zoom, setZoom] = useState(1)
     const [offset, setOffset] = useState<Point>({ x: 0, y: 0 })
     const containerRef = useRef<HTMLDivElement>(null)

@@ -6,7 +6,7 @@
 
 ## Overview
 
-OpenClwList is a self-hosted web interface that connects to a running [OpenClaw Gateway](https://github.com/danyanovich/OpenClwList) instance via WebSocket and gives you a real-time operational window into your AI agent fleet.
+OpenClwList is a self-hosted web interface that connects to a running OpenClaw Gateway instance via WebSocket and gives you a real-time operational window into your AI agent fleet.
 
 ```
 OpenClaw Gateway  ──ws──►  OpenClwList Backend (Express + SQLite)
@@ -57,14 +57,16 @@ git clone https://github.com/danyanovich/OpenClwList.git
 cd OpenClwList
 npm install
 
-# 2. Configure
-cp .env.example .env.local
-
-# 3. Run in development
-npm run dev
+# 2. Run (local mode, easiest)
+npm run run:local
 ```
 
 Open **`http://127.0.0.1:3010`**
+
+On first run in remote mode (or when auth is not configured), the app can bootstrap itself from the browser:
+- Create a dashboard access token
+- Paste your OpenClaw gateway token
+- Save and connect
 
 ---
 
@@ -78,16 +80,27 @@ The fastest way to connect this dashboard as a skill to your agent fleet:
 
 The agent will automatically fetch the manifest from `/skill` and register the dashboard as a new capability.
 
-The agent will automatically fetch the manifest from `/skill` and register the dashboard as a new capability.
-
 ---
 
 ## Remote Access
 
-To access the dashboard from other devices (phone, tablet, another PC) on your local network:
+### Simple remote startup (browser bootstrap, no `.env` required)
 
-1. **Configure Host**: Open `.env.local` and change `HOST=127.0.0.1` to `HOST=0.0.0.0`.
-2. **Restart**: Restart the dashboard (`npm run dev`).
+```bash
+npm run run:remote
+```
+
+Then open the dashboard and complete the browser setup wizard:
+1. Create a **dashboard access token**
+2. Paste **OpenClaw gateway token** (optional, but recommended)
+3. Set **Gateway URL** and connect
+
+### LAN access (quick local network test)
+
+To access the dashboard from other devices on your local network:
+
+1. **Configure Host**: create/update `.env` and set `OPS_UI_HOST=0.0.0.0` (or legacy `HOST=0.0.0.0`).
+2. **Restart**: restart the dashboard (`npm run run:local` or `npm run run:remote`).
 3. **Find IP**: Find your computer's local IP address (e.g., `192.168.1.5`).
 4. **Connect**: Open `http://<your-ip>:3010` on your other device.
 
@@ -99,16 +112,21 @@ To access the dashboard from other devices (phone, tablet, another PC) on your l
 ## Environment Variables
 
 > [!TIP]
-> **Network Access vs Security:** By default, `HOST` is set to `127.0.0.1` so the dashboard is only accessible from your own machine (safe for public Wi-Fi). If you want to access the dashboard from other devices on your local network (e.g., your phone or iPad), change `HOST` to `0.0.0.0` in your `.env.local` file.
+> **Network Access vs Security:** By default, `OPS_UI_HOST`/`HOST` is `127.0.0.1`, so the dashboard is only accessible from your own machine. For remote access, prefer a reverse proxy (Caddy/Nginx) and keep the app bound to `127.0.0.1`.
 
 | Variable | Default | Description |
 |---|---|---|
-| `PORT` | `3010` | HTTP server port |
-| `HOST` | `127.0.0.1` | Bind address (use `0.0.0.0` for network access) |
+| `OPS_UI_MODE` | `local` | `local` or `remote` mode |
+| `OPS_UI_PORT` / `PORT` | `3010` | HTTP server port |
+| `OPS_UI_HOST` / `HOST` | `127.0.0.1` | Bind address |
+| `OPS_UI_AUTH_ENABLED` | `false` local / `true` remote | Protect `/api/*` with Bearer token |
+| `OPS_UI_BEARER_TOKEN` | — | Dashboard access token (can also be configured via browser bootstrap) |
+| `OPS_UI_REMOTE_ALLOW_DANGEROUS_ACTIONS` | `false` | Allow destructive/setup actions in remote mode |
+| `OPS_UI_DEFAULT_HOST_ID` | `local` | Default active OpenClaw host id |
+| `OPS_UI_HOSTS_JSON` | — | Multi-host OpenClaw config JSON array |
 | `CLAWDBOT_URL` | `ws://127.0.0.1:18789` | OpenClaw Gateway WebSocket URL |
 | `CLAWDBOT_API_TOKEN` | — | Explicit auth token (preferred) |
 | `OPENCLAW_CONFIG_PATH` | — | Path to OpenClaw config file |
-| `OPS_UI_DB_PATH` | `./data/ops-ui.sqlite` | SQLite database path |
 | `OPS_UI_MAX_QUEUE` | `5000` | In-memory event queue cap |
 
 **Token resolution order:**
@@ -162,9 +180,11 @@ GET  /api/analytics?days=30        Usage data (7 / 30 / 90 days)
 ## Production Deployment
 
 ```bash
-npm run build
-npm run start
+npm run run:remote
 ```
+
+For a proper remote deployment with `systemd + Caddy`, see:
+- `docs/DEPLOY_REMOTE.md`
 
 Or with a process supervisor:
 
@@ -190,7 +210,9 @@ curl http://127.0.0.1:3010/api/tasks
 ## Development
 
 ```bash
-npm run dev        # Start dev server with hot reload
+npm run run:local  # Guided local startup (installs/checks + dev server)
+npm run dev        # Raw dev server with hot reload
+npm run run:remote # Guided remote startup (build + doctor + prod start)
 npm run typecheck  # TypeScript check
 npm run lint       # ESLint
 npm run check      # typecheck + lint
@@ -215,7 +237,7 @@ OpenClwList/
 │   ├── server.ts           # Express + Next.js server
 │   ├── db.ts               # SQLite schema + queries
 │   └── types.ts            # Shared TypeScript types
-└── data/                   # SQLite database (gitignored)
+└── data/                   # SQLite + runtime state (gitignored)
 ```
 
 ---

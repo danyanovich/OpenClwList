@@ -26,6 +26,7 @@ const MAX_QUEUE = Number(process.env.OPS_UI_MAX_QUEUE || 5000)
 const NOISY_EVENT_BACKPRESSURE_DROP = true
 const RUNTIME_HOST_OVERRIDES_PATH = path.resolve(process.cwd(), 'data', 'host-overrides.json')
 const RUNTIME_DASHBOARD_AUTH_PATH = path.resolve(process.cwd(), 'data', 'dashboard-auth.json')
+const ALLOW_REMOTE_BOOTSTRAP = ['1', 'true', 'yes', 'on'].includes((process.env.OPS_UI_ALLOW_REMOTE_BOOTSTRAP || '').trim().toLowerCase())
 
 const app = express()
 if (config.trustProxy) {
@@ -100,7 +101,7 @@ function readRuntimeDashboardAuth(): RuntimeDashboardAuth {
 
 function writeRuntimeDashboardAuth(value: RuntimeDashboardAuth): void {
   fs.mkdirSync(path.dirname(RUNTIME_DASHBOARD_AUTH_PATH), { recursive: true })
-  fs.writeFileSync(RUNTIME_DASHBOARD_AUTH_PATH, JSON.stringify(value, null, 2), 'utf8')
+  fs.writeFileSync(RUNTIME_DASHBOARD_AUTH_PATH, JSON.stringify(value, null, 2), { encoding: 'utf8', mode: 0o600 })
 }
 
 let runtimeDashboardAuth = readRuntimeDashboardAuth()
@@ -150,6 +151,11 @@ function getApiBearerFromRequest(req: express.Request): string | undefined {
 
 function isBootstrapSetupOpen(): boolean {
   return getDashboardAuthState().source === 'bootstrap'
+}
+
+function isLoopbackRequest(req: express.Request): boolean {
+  const ip = (req.ip || req.socket.remoteAddress || '').replace(/^::ffff:/, '')
+  return ip === '127.0.0.1' || ip === '::1'
 }
 
 app.get('/health', (_req, res) => {
@@ -334,7 +340,7 @@ function readRuntimeHostOverrides(): RuntimeHostOverrides {
 
 function writeRuntimeHostOverrides(data: RuntimeHostOverrides): void {
   fs.mkdirSync(path.dirname(RUNTIME_HOST_OVERRIDES_PATH), { recursive: true })
-  fs.writeFileSync(RUNTIME_HOST_OVERRIDES_PATH, JSON.stringify(data, null, 2), 'utf8')
+  fs.writeFileSync(RUNTIME_HOST_OVERRIDES_PATH, JSON.stringify(data, null, 2), { encoding: 'utf8', mode: 0o600 })
 }
 
 function applyRuntimeHostOverrides(): void {
@@ -362,6 +368,13 @@ app.post('/api/setup/bootstrap', async (req, res) => {
     res.status(403).json({ ok: false, error: 'Bootstrap setup is disabled (dashboard token already configured)' })
     return
   }
+  if (config.mode === 'remote' && !ALLOW_REMOTE_BOOTSTRAP && !isLoopbackRequest(req)) {
+    res.status(403).json({
+      ok: false,
+      error: 'Remote bootstrap is disabled by default. Run setup from localhost or set OPS_UI_ALLOW_REMOTE_BOOTSTRAP=true temporarily.',
+    })
+    return
+  }
   const body = (req.body && typeof req.body === 'object' ? req.body : {}) as {
     dashboardToken?: string
     gatewayToken?: string
@@ -378,15 +391,12 @@ app.post('/api/setup/bootstrap', async (req, res) => {
     res.status(400).json({ ok: false, error: 'dashboardToken is required' })
     return
   }
-  runtimeDashboardAuth = {
-    authEnabled: true,
-    bearerToken: dashboardToken,
-    configuredAt: Date.now(),
-  }
-  writeRuntimeDashboardAuth(runtimeDashboardAuth)
 
   let gatewayConnected = false
   let warning: string | undefined
+  const previousActiveHostId = hostManager.getActiveHostId()
+  let previousHostSnapshot: { gatewayUrl: string; gatewayToken?: string; gatewayTokenSource?: string } | undefined
+  let stagedHostOverrideWrite: { hostId: string; gatewayUrl: string; gatewayToken: string } | undefined
   try {
     if (hostId !== hostManager.getActiveHostId()) {
       setActiveHost(hostId)
@@ -394,6 +404,11 @@ app.post('/api/setup/bootstrap', async (req, res) => {
     if (gatewayToken) {
       const activeHost = hostManager.getHost(hostId)
       const resolvedGatewayUrl = gatewayUrl || activeHost.gatewayUrl
+      previousHostSnapshot = {
+        gatewayUrl: activeHost.gatewayUrl,
+        gatewayToken: activeHost.gatewayToken,
+        gatewayTokenSource: activeHost.gatewayTokenSource,
+      }
       hostManager.updateHostConnection(hostId, {
         gatewayUrl: resolvedGatewayUrl,
         gatewayToken,
@@ -403,10 +418,7 @@ app.post('/api/setup/bootstrap', async (req, res) => {
         gateway = hostManager.getActiveClient()
         resetActiveGatewayBuffers()
       }
-      const overrides = readRuntimeHostOverrides()
-      const hosts = overrides.hosts || {}
-      hosts[hostId] = { ...(hosts[hostId] || {}), gatewayUrl: resolvedGatewayUrl, gatewayToken }
-      writeRuntimeHostOverrides({ ...overrides, hosts })
+      stagedHostOverrideWrite = { hostId, gatewayUrl: resolvedGatewayUrl, gatewayToken }
     }
     if (connectNow) {
       await hostManager.connect(hostId)
@@ -420,11 +432,45 @@ app.post('/api/setup/bootstrap', async (req, res) => {
         }
       }
     }
+
+    runtimeDashboardAuth = {
+      authEnabled: true,
+      bearerToken: dashboardToken,
+      configuredAt: Date.now(),
+    }
+    writeRuntimeDashboardAuth(runtimeDashboardAuth)
+
+    if (stagedHostOverrideWrite) {
+      const overrides = readRuntimeHostOverrides()
+      const hosts = overrides.hosts || {}
+      hosts[stagedHostOverrideWrite.hostId] = {
+        ...(hosts[stagedHostOverrideWrite.hostId] || {}),
+        gatewayUrl: stagedHostOverrideWrite.gatewayUrl,
+        gatewayToken: stagedHostOverrideWrite.gatewayToken,
+      }
+      writeRuntimeHostOverrides({ ...overrides, hosts })
+    }
   } catch (error) {
+    try {
+      if (previousHostSnapshot) {
+        hostManager.updateHostConnection(hostId, {
+          gatewayUrl: previousHostSnapshot.gatewayUrl,
+          gatewayToken: previousHostSnapshot.gatewayToken,
+          gatewayTokenSource: previousHostSnapshot.gatewayTokenSource,
+        })
+      }
+      if (hostManager.getActiveHostId() !== previousActiveHostId) {
+        setActiveHost(previousActiveHostId)
+      } else {
+        gateway = hostManager.getActiveClient()
+      }
+    } catch (rollbackError) {
+      console.warn('[ops-ui] bootstrap rollback failed:', rollbackError instanceof Error ? rollbackError.message : String(rollbackError))
+    }
     res.status(isGatewayUnavailableError(error) ? 503 : 500).json({
       ok: false,
       error: error instanceof Error ? error.message : String(error),
-      authConfigured: true,
+      authConfigured: false,
     })
     return
   }
@@ -827,7 +873,7 @@ app.get('/api/agents', (_req, res) => {
     }
 
     // If no agents in local config, derive from sessions (remote gateway scenario)
-    if (agentsList.length === 0) {
+    if (mergedAgents.length === 0) {
       const discovered = getDistinctAgents()
       const discoveredAgents = discovered.map((d) => ({
         id: d.agentId,
