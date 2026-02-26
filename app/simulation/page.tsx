@@ -22,7 +22,7 @@ export default function SimulationPage() {
     useEffect(() => {
         let cancelled = false
 
-        const load = async () => {
+        const loadInitial = async () => {
             try {
                 const [sessionsRes, agentsRes, diagRes, runsRes] = await Promise.all([
                     fetch('/api/monitor/sessions'),
@@ -79,22 +79,36 @@ export default function SimulationPage() {
                 const runsJson = await runsRes.json()
                 if (Array.isArray(runsJson.runs)) {
                     const running = runsJson.runs.filter((r: any) => r.state === 'running')
-                    // простая эвристика: 0–10 running → 0–100%
                     const load = Math.max(0, Math.min(100, running.length * 10))
                     setLogicLoad(load)
-                } else {
-                    setLogicLoad(undefined)
                 }
             } catch (err) {
-                console.error('[simulation] load error', err)
+                console.error('[simulation] initial load error', err)
             }
         }
 
-        load()
-        const interval = setInterval(load, 5000)
+        loadInitial()
+
+        // SSE for real-time updates
+        const es = new EventSource('/api/monitor/events')
+        es.onmessage = (e) => {
+            try {
+                const data = JSON.parse(e.data)
+                if (data.type === 'monitor_update' || data.type === 'monitor_refresh') {
+                    // Trigger a partial refresh on any relevant event
+                    loadInitial()
+                }
+            } catch (err) {
+                console.error('[simulation] sse error', err)
+            }
+        }
+
+        const fallbackInterval = setInterval(loadInitial, 10000)
+
         return () => {
             cancelled = true
-            clearInterval(interval)
+            es.close()
+            clearInterval(fallbackInterval)
         }
     }, [])
 
@@ -103,19 +117,17 @@ export default function SimulationPage() {
             if (!s.agentId) return acc
             const existing = acc[s.agentId]
             if (existing && existing.id === s.agentId && existing.status === 'thinking') {
-                // keep thinking as highest-priority state
                 return acc
             }
             const meta = agentsById[s.agentId]
             const name = meta?.name || s.agentId
-            // Map gateway status to visualization status
             const visStatus: 'idle' | 'active' | 'thinking' = s.status === 'thinking' ? 'thinking' : s.status === 'active' ? 'active' : 'idle'
             acc[s.agentId] = { id: s.agentId, name, status: visStatus }
             return acc
         }, {}),
     )
 
-    // Map recent activities to stations per agent
+    // Map recent activities to stations per agent with better heuristics
     type Station = 'chat' | 'tasks' | 'tools' | 'browser' | 'db' | 'cron' | 'system'
     const agentStations: { agentId: string; station: Station; lastLabel?: string }[] = (() => {
         if (sessions.length === 0 || activities.length === 0) return []
@@ -125,9 +137,11 @@ export default function SimulationPage() {
             return acc
         }, {})
 
-        const stationByAgent = new Map<string, Station>()
+        const stationByAgent = new Map<string, { station: Station; text: string }>()
 
-        for (const a of activities) {
+        // Activities are already slice(0, 20) and likely sorted descending by TS
+        // We want the LATEST activity for each agent
+        for (const a of [...activities].reverse()) {
             const sk = a.sessionKey || ''
             const agentId = sessionAgentMap[sk]
             if (!agentId) continue
@@ -136,30 +150,33 @@ export default function SimulationPage() {
             const tool = (a.toolName || '').toLowerCase()
 
             let station: Station = 'system'
-            if (kind === 'chat') station = 'chat'
-            if (kind === 'tool' || tool) {
-                if (tool.includes('browser')) station = 'browser'
-                else if (tool.startsWith('cron') || tool.includes('schedule')) station = 'cron'
-                else if (tool.includes('db') || tool.includes('sqlite')) station = 'db'
-                else station = 'tools'
-            }
-            // tasks: грубо считаем, что любые события с "task" в tool/kind → TASKS
-            if (tool.includes('task') || kind.includes('task')) station = 'tasks'
+            let label = ''
 
-            const last = stationByAgent.get(agentId)
-            // сохраняем только последнее по времени (activities уже отсортированы свежим сверху)
-            if (!last || last[1] !== station) {
-                stationByAgent.set(agentId, station)
+            if (kind === 'chat') {
+                station = 'chat'
+                label = 'Replying to user'
+            } else if (kind === 'tool' || tool) {
+                label = `Using ${a.toolName}`
+                if (tool.includes('browser') || tool.includes('page') || tool.includes('click')) station = 'browser'
+                else if (tool.startsWith('cron') || tool.includes('schedule')) station = 'cron'
+                else if (tool.includes('db') || tool.includes('sqlite') || tool.includes('query')) station = 'db'
+                else if (tool.includes('task') || tool.includes('run')) station = 'tasks'
+                else station = 'tools'
+            } else if (kind.includes('task')) {
+                station = 'tasks'
+                label = 'Managing tasks'
+            }
+
+            if (station) {
+                stationByAgent.set(agentId, { station, text: label || a.text })
             }
         }
 
-        return Array.from(stationByAgent.entries()).map(([agentId, station]) => {
-            const lastActivity = activities.find(a => {
-                const sk = a.sessionKey || ''
-                return sessionAgentMap[sk] === agentId
-            })
-            return { agentId, station, lastLabel: lastActivity?.text }
-        })
+        return Array.from(stationByAgent.entries()).map(([agentId, { station, text }]) => ({
+            agentId,
+            station,
+            lastLabel: text
+        }))
     })()
 
     return (

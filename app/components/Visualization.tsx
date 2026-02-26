@@ -54,6 +54,16 @@ const STATION_LABEL: Record<VisualizationActivityInput['station'], string> = {
     system: 'SYSTEM',
 }
 
+const STATION_COLORS: Record<VisualizationActivityInput['station'], string> = {
+    chat: 'blue',
+    tasks: 'emerald',
+    tools: 'indigo',
+    browser: 'cyan',
+    db: 'amber',
+    cron: 'purple',
+    system: 'slate',
+}
+
 const STATION_BADGE_CLASS: Record<VisualizationActivityInput['station'], string> = {
     chat: 'bg-blue-500/20 text-blue-300',
     tasks: 'bg-emerald-500/20 text-emerald-300',
@@ -72,6 +82,14 @@ export const Visualization: React.FC<VisualizationProps> = ({ agents: inputAgent
     const [dragStart, setDragStart] = useState<Point>({ x: 0, y: 0 })
 
     const [agents, setAgents] = useState<Agent[]>([])
+    const [activeStations, setActiveStations] = useState<Set<string>>(new Set())
+
+    // Update active stations based on current activities
+    useEffect(() => {
+        const active = new Set<string>()
+        activities.forEach(act => active.add(act.station))
+        setActiveStations(active)
+    }, [activities])
 
     // lay out incoming agents and align their targets to activity stations
     useEffect(() => {
@@ -85,25 +103,29 @@ export const Visualization: React.FC<VisualizationProps> = ({ agents: inputAgent
             return acc
         }, {})
 
-        const next: Agent[] = inputAgents.map((a, idx) => {
-            const row = Math.floor(idx / 3)
-            const col = idx % 3
-            const defaultPos: Point = {
-                x: baseX + col * gapX,
-                y: baseY + row * gapY,
-            }
-            const activity = activityByAgent[a.id]
-            const station = activity?.station
-            const targetPos = station ? STATIONS[station] : defaultPos
-            return {
-                id: a.id,
-                name: a.name,
-                status: a.status,
-                pos: defaultPos,
-                targetPos,
-            }
+        setAgents(prev => {
+            return inputAgents.map((a, idx) => {
+                const row = Math.floor(idx / 3)
+                const col = idx % 3
+                const defaultPos: Point = {
+                    x: baseX + col * gapX,
+                    y: baseY + row * gapY,
+                }
+                const activity = activityByAgent[a.id]
+                const station = activity?.station
+                const targetPos = station ? STATIONS[station] : defaultPos
+
+                // Keep current pos if agent already exists
+                const existing = prev.find(p => p.id === a.id)
+                return {
+                    id: a.id,
+                    name: a.name,
+                    status: a.status,
+                    pos: existing ? existing.pos : defaultPos,
+                    targetPos,
+                }
+            })
         })
-        setAgents(next)
     }, [JSON.stringify(inputAgents), JSON.stringify(activities)])
 
     // Move agents smoothly toward their target stations
@@ -116,11 +138,10 @@ export const Visualization: React.FC<VisualizationProps> = ({ agents: inputAgent
                 const dist = Math.sqrt(dx * dx + dy * dy)
 
                 if (dist < 4) {
-                    // Snap to target when close enough
                     return { ...a, pos: target }
                 }
 
-                const moveSpeed = 2.2
+                const moveSpeed = 4 // slightly faster for better feel
                 return {
                     ...a,
                     pos: {
@@ -129,7 +150,7 @@ export const Visualization: React.FC<VisualizationProps> = ({ agents: inputAgent
                     }
                 }
             }))
-        }, 50)
+        }, 32) // ~30fps for smooth motion
         return () => clearInterval(interval)
     }, [])
 
@@ -177,36 +198,86 @@ export const Visualization: React.FC<VisualizationProps> = ({ agents: inputAgent
                 className="absolute top-0 left-0 transition-transform duration-75 ease-out"
                 style={{ transform: `translate(${offset.x}px, ${offset.y}px) scale(${zoom})` }}
             >
-                {/* Environment Objects */}
-                <div className="absolute top-[120px] left-[160px] w-48 h-32 bg-[#1a1f2e] border-4 border-[#2d3748] rounded-xl flex items-center justify-center shadow-lg">
-                    <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-[#2d3748] px-3 py-1 rounded text-[10px] font-bold text-blue-400 border border-blue-500/20">
-                        COMPUTE CLUSTER
-                    </div>
-                    <div className="grid grid-cols-4 gap-1 p-2">
-                        {Array.from({ length: 8 }).map((_, i) => (
-                            <div key={i} className={`w-3 h-3 rounded-full ${Math.random() > 0.3 ? 'bg-green-500' : 'bg-red-500'} animate-pulse`} />
-                        ))}
-                    </div>
-                </div>
+                {/* Station Nodes */}
+                {Object.entries(STATIONS).map(([key, pos]) => {
+                    const isActive = activeStations.has(key)
+                    const color = STATION_COLORS[key as keyof typeof STATIONS]
+                    const label = STATION_LABEL[key as keyof typeof STATIONS]
 
-                <div className="absolute top-[350px] left-[500px] w-40 h-24 bg-[#1a1f2e] border-4 border-[#2d3748] rounded-xl flex items-center justify-center shadow-lg">
-                    <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-[#2d3748] px-3 py-1 rounded text-[10px] font-bold text-amber-400 border border-amber-500/20">
-                        DATABASE NODE
-                    </div>
-                    <div className="w-full h-2 bg-blue-500/10 mx-4 rounded-full overflow-hidden">
-                        <div className="w-1/2 h-full bg-blue-500 animate-pulse" />
-                    </div>
-                </div>
+                    return (
+                        <div key={key} className="absolute" style={{ left: pos.x - 40, top: pos.y - 40 }}>
+                            <div className={`relative w-20 h-20 rounded-2xl flex items-center justify-center border-2 transition-all duration-300 ${isActive
+                                    ? `bg-${color}-500/20 border-${color}-400 shadow-[0_0_30px_rgba(var(--${color}-500-rgb),0.3)]`
+                                    : 'bg-white/5 border-white/10 opacity-60'
+                                }`}>
+                                <div className={`text-[10px] font-black tracking-tighter ${isActive ? `text-${color}-300` : 'text-gray-500'}`}>
+                                    {label}
+                                </div>
+                                {isActive && (
+                                    <div className={`absolute -inset-2 border border-${color}-500/50 rounded-3xl animate-ping opacity-20`} />
+                                )}
+                            </div>
+                        </div>
+                    )
+                })}
+
+                {/* Connection Beams */}
+                <svg className="absolute inset-0 w-[2000px] h-[2000px] pointer-events-none overflow-visible">
+                    {agents.map(agent => {
+                        const activity = activities.find(act => act.agentId === agent.id)
+                        if (!activity) return null
+                        const stationPos = STATIONS[activity.station]
+                        if (!stationPos) return null
+
+                        const color = STATION_COLORS[activity.station]
+                        const strokeColor = {
+                            blue: '#60a5fa',
+                            emerald: '#34d399',
+                            indigo: '#818cf8',
+                            cyan: '#22d3ee',
+                            amber: '#fbbf24',
+                            purple: '#c084fc',
+                            slate: '#94a3b8'
+                        }[color]
+
+                        return (
+                            <React.Fragment key={`beam-${agent.id}`}>
+                                <line
+                                    x1={agent.pos.x + 24} y1={agent.pos.y + 28}
+                                    x2={stationPos.x} y2={stationPos.y}
+                                    stroke={strokeColor}
+                                    strokeWidth="2"
+                                    strokeDasharray="4 4"
+                                    className="opacity-40"
+                                >
+                                    <animate attributeName="stroke-dashoffset" from="0" to="20" dur="0.5s" repeatCount="indefinite" />
+                                </line>
+                            </React.Fragment>
+                        )
+                    })}
+                </svg>
 
                 {/* Agents */}
                 {agents.map(agent => (
                     <div
                         key={agent.id}
                         className="absolute z-50 flex flex-col items-center group"
-                        style={{ left: agent.pos.x, top: agent.pos.y, transition: 'all 0.05s linear' }}
+                        style={{ left: agent.pos.x, top: agent.pos.y, transition: 'all 0.03s linear' }}
                     >
-                        {/* Status Indicator */}
-                        <div className="absolute -top-14 opacity-0 group-hover:opacity-100 transition-opacity bg-black/90 text-[10px] px-3 py-1.5 rounded-md border border-white/10 whitespace-nowrap z-50 shadow-lg flex flex-col items-start gap-0.5">
+                        {/* Action Label (floating above agent) */}
+                        {(() => {
+                            const act = activities.find(a => a.agentId === agent.id)
+                            if (!act?.lastLabel) return null
+                            const color = STATION_COLORS[act.station]
+                            return (
+                                <div className={`absolute -top-12 px-3 py-1 bg-black/80 backdrop-blur-md rounded-lg border border-${color}-500/30 text-[10px] whitespace-nowrap animate-bounce shadow-xl`}>
+                                    <span className={`font-mono text-${color}-300`}>{act.lastLabel.substring(0, 30)}...</span>
+                                </div>
+                            )
+                        })()}
+
+                        {/* Status Tooltip (on hover) */}
+                        <div className="absolute -top-20 opacity-0 group-hover:opacity-100 transition-opacity bg-black/90 text-[10px] px-3 py-1.5 rounded-md border border-white/10 whitespace-nowrap z-50 shadow-lg flex flex-col items-start gap-0.5">
                             <div className="font-bold tracking-wide text-gray-100 flex items-center gap-2">
                                 <span>{agent.status.toUpperCase()}</span>
                                 {activities && activities.length > 0 && (() => {
@@ -221,69 +292,45 @@ export const Visualization: React.FC<VisualizationProps> = ({ agents: inputAgent
                                     )
                                 })()}
                             </div>
-                            {activities && activities.length > 0 && (() => {
-                                const act = activities.find(a => a.agentId === agent.id)
-                                if (!act?.lastLabel) return null
-                                return (
-                                    <div className="text-[9px] text-gray-400 max-w-xs truncate">
-                                        {act.lastLabel}
-                                    </div>
-                                )
-                            })()}
                         </div>
 
-                        {/* Agent "Pixel" Body - more detailed, Stardew-like */}
-                        <div className={`relative w-12 h-14 shadow-2xl transition-transform duration-200 ${agent.status === 'thinking' ? 'animate-[pulse_1.2s_ease-in-out_infinite] scale-105' : ''}`}>
-                            {/* Body */}
-                            <div className={`relative w-12 h-12 rounded-[6px] border-2 border-black/70 overflow-hidden
+                        {/* Agent Body */}
+                        <div className={`relative w-12 h-14 shadow-2xl transition-transform duration-200 ${agent.status === 'thinking' ? 'animate-[pulse_0.8s_ease-in-out_infinite] scale-110' : ''}`}>
+                            <div className={`relative w-12 h-12 rounded-[10px] border-2 border-black/70 overflow-hidden
                                 ${agent.status === 'active'
-                                    ? 'bg-gradient-to-b from-indigo-400 to-indigo-700'
+                                    ? 'bg-gradient-to-b from-blue-400 to-blue-700'
                                     : agent.status === 'thinking'
                                         ? 'bg-gradient-to-b from-amber-300 to-amber-600'
                                         : 'bg-gradient-to-b from-emerald-300 to-emerald-600'
                                 }`}
                             >
-                                {/* Face shading */}
-                                <div className="absolute inset-0 bg-gradient-to-br from-white/10 via-transparent to-black/30" />
+                                <div className="absolute inset-0 bg-gradient-to-br from-white/20 via-transparent to-black/40" />
 
                                 {/* Eyes */}
                                 <div className="absolute top-3 left-2 right-2 flex justify-between">
-                                    <div className="w-3 h-3 bg-black/70 rounded-[2px] flex items-center justify-center">
-                                        <div className="w-1.5 h-1.5 bg-white/80 rounded-sm translate-x-[0.5px] -translate-y-[0.5px]" />
+                                    <div className={`w-3.5 h-3.5 bg-black/80 rounded-[3px] flex items-center justify-center ${agent.status === 'thinking' ? 'animate-pulse' : ''}`}>
+                                        <div className="w-1.5 h-1.5 bg-white/90 rounded-sm translate-x-[0.5px] -translate-y-[0.5px]" />
                                     </div>
-                                    <div className="w-3 h-3 bg-black/70 rounded-[2px] flex items-center justify-center">
-                                        <div className="w-1.5 h-1.5 bg-white/80 rounded-sm translate-x-[0.5px] -translate-y-[0.5px]" />
+                                    <div className={`w-3.5 h-3.5 bg-black/80 rounded-[3px] flex items-center justify-center ${agent.status === 'thinking' ? 'animate-pulse' : ''}`}>
+                                        <div className="w-1.5 h-1.5 bg-white/90 rounded-sm translate-x-[0.5px] -translate-y-[0.5px]" />
                                     </div>
                                 </div>
 
-                                {/* Mouth */}
-                                <div className="absolute bottom-2 left-1/2 -translate-x-1/2 w-6 h-1.5 rounded-full bg-black/40" />
+                                {/* Mouth / Action */}
+                                <div className="absolute bottom-3 left-1/2 -translate-x-1/2 w-5 h-1.5 rounded-full bg-black/50" />
 
-                                {/* Status dots on chest */}
-                                <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-1">
-                                    {Array.from({ length: 3 }).map((_, i) => (
-                                        <div
-                                            key={i}
-                                            className={
-                                                'w-1.5 h-1.5 rounded-full ' +
-                                                (agent.status === 'thinking'
-                                                    ? 'bg-amber-200 animate-[bounce_1s_infinite]'
-                                                    : agent.status === 'active'
-                                                        ? 'bg-emerald-200'
-                                                        : 'bg-slate-200/70')
-                                            }
-                                            style={agent.status === 'thinking' ? { animationDelay: `${i * 0.15}s` } : {}}
-                                        />
-                                    ))}
+                                {/* Status lights */}
+                                <div className="absolute bottom-5 left-1/2 -translate-x-1/2 flex gap-1">
+                                    {isActiveAgent(agent.id, activities) && (
+                                        <div className="w-2 h-2 rounded-full bg-red-500 animate-ping" />
+                                    )}
                                 </div>
                             </div>
-
-                            {/* Simple feet shadow */}
-                            <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-8 h-1.5 bg-black/40 rounded-full opacity-60" />
+                            <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-8 h-2 bg-black/60 rounded-full blur-[2px]" />
                         </div>
 
                         {/* Nameplate */}
-                        <div className="mt-2 bg-black/60 backdrop-blur-md border border-white/10 px-2 py-0.5 rounded-full text-[9px] font-bold text-white/80 font-mono shadow-lg">
+                        <div className="mt-2 bg-black/80 backdrop-blur-md border border-white/10 px-3 py-1 rounded-full text-[10px] font-bold text-white shadow-xl">
                             {agent.name}
                         </div>
                     </div>
@@ -291,76 +338,47 @@ export const Visualization: React.FC<VisualizationProps> = ({ agents: inputAgent
             </div>
 
             {/* Interface Overlay */}
-            <div className="absolute top-6 left-6 flex flex-col gap-2">
-                <div className="bg-black/60 backdrop-blur-xl border border-white/10 p-3 rounded-2xl">
-                    <div className="text-[10px] uppercase tracking-widest text-gray-500 font-bold mb-1">Total Logic Load</div>
-                    <div className="text-xl font-mono text-blue-400">{typeof logicLoad === 'number' ? `${Math.round(logicLoad)}%` : '—'}</div>
+            <div className="absolute top-6 left-6 flex flex-col gap-2 pointer-events-none">
+                <div className="bg-black/80 backdrop-blur-2xl border border-white/10 p-4 rounded-3xl shadow-2xl">
+                    <div className="text-[10px] uppercase tracking-[0.2em] text-blue-500 font-black mb-1">Logic Load</div>
+                    <div className="text-3xl font-mono text-white flex items-baseline gap-1">
+                        {typeof logicLoad === 'number' ? Math.round(logicLoad) : '0'}
+                        <span className="text-sm text-gray-500">%</span>
+                    </div>
+                    <div className="w-full h-1 bg-white/10 mt-3 rounded-full overflow-hidden">
+                        <div
+                            className="h-full bg-blue-500 transition-all duration-1000 shadow-[0_0_10px_rgba(59,130,246,0.5)]"
+                            style={{ width: `${logicLoad || 0}%` }}
+                        />
+                    </div>
                 </div>
 
-                {/* Station Legend */}
-                <div className="bg-black/70 backdrop-blur-xl border border-white/10 p-3 rounded-2xl mt-1 min-w-[190px]">
-                    <div className="text-[10px] uppercase tracking-widest text-gray-500 font-bold mb-2">Stations</div>
-                    <div className="space-y-1.5 text-[10px] text-gray-300">
-                        <div className="flex items-center justify-between">
-                            <span>CHAT</span>
-                            <span className="text-gray-500">User / Agent chat</span>
-                        </div>
-                        <div className="flex items-center justify-between">
-                            <span>TASKS</span>
-                            <span className="text-gray-500">Tasks &amp; runs</span>
-                        </div>
-                        <div className="flex items-center justify-between">
-                            <span>TOOLS</span>
-                            <span className="text-gray-500">Tools &amp; integrations</span>
-                        </div>
-                        <div className="flex items-center justify-between">
-                            <span>BROWSER</span>
-                            <span className="text-gray-500">Browser relay</span>
-                        </div>
-                        <div className="flex items-center justify-between">
-                            <span>DB</span>
-                            <span className="text-gray-500">Storage / DB</span>
-                        </div>
-                        <div className="flex items-center justify-between">
-                            <span>CRON</span>
-                            <span className="text-gray-500">Schedules</span>
-                        </div>
-                        <div className="flex items-center justify-between">
-                            <span>SYSTEM</span>
-                            <span className="text-gray-500">Diagnostics</span>
-                        </div>
+                {/* Station Status Legend */}
+                <div className="bg-black/60 backdrop-blur-xl border border-white/10 p-4 rounded-3xl mt-2 min-w-[200px]">
+                    <div className="text-[10px] uppercase tracking-widest text-gray-500 font-bold mb-3">Live Systems</div>
+                    <div className="space-y-2">
+                        {Object.keys(STATIONS).map(s => (
+                            <div key={s} className="flex items-center gap-3">
+                                <div className={`w-2 h-2 rounded-full ${activeStations.has(s) ? `bg-${STATION_COLORS[s as keyof typeof STATIONS]}-400 animate-pulse` : 'bg-white/10'}`} />
+                                <span className={`text-[10px] font-bold uppercase ${activeStations.has(s) ? 'text-white' : 'text-gray-600'}`}>{s}</span>
+                            </div>
+                        ))}
                     </div>
                 </div>
             </div>
 
-            <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex bg-black/40 backdrop-blur-2xl border border-white/5 p-1.5 rounded-2xl shadow-2xl">
-                {(() => {
-                    const load = typeof logicLoad === 'number' ? logicLoad : 0
-                    let dot = 'bg-green-500'
-                    let label = 'Stable'
-                    let text = 'text-gray-400'
-                    if (load >= 70) {
-                        dot = 'bg-red-500'
-                        label = 'Hot'
-                        text = 'text-red-300'
-                    } else if (load >= 40) {
-                        dot = 'bg-amber-500'
-                        label = 'Busy'
-                        text = 'text-amber-300'
-                    }
-                    return (
-                        <div className="flex items-center gap-1 px-3 border-r border-white/10 mr-2">
-                            <div className={`w-2 h-2 rounded-full ${dot} animate-pulse`} />
-                            <span className={`text-[10px] uppercase font-bold ${text}`}>{label}</span>
-                        </div>
-                    )
-                })()}
+            <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex items-center bg-black/80 backdrop-blur-2xl border border-white/10 p-2 rounded-2xl shadow-2xl">
                 <div className="flex gap-1">
-                    <button onClick={() => setZoom(z => Math.min(3, z + 0.2))} className="w-8 h-8 flex items-center justify-center bg-white/5 hover:bg-white/10 rounded-xl transition-colors text-white">+</button>
-                    <button onClick={() => setZoom(z => Math.max(0.3, z - 0.2))} className="w-8 h-8 flex items-center justify-center bg-white/5 hover:bg-white/10 rounded-xl transition-colors text-white">-</button>
-                    <button onClick={() => setOffset({ x: 0, y: 0 })} className="px-3 flex items-center justify-center bg-white/5 hover:bg-white/10 rounded-xl transition-colors text-[10px] font-bold text-gray-400">RESET VIEW</button>
+                    <button onClick={() => setZoom(z => Math.min(3, z + 0.2))} className="w-10 h-10 flex items-center justify-center bg-white/5 hover:bg-white/10 rounded-xl transition-all text-white font-bold text-xl">+</button>
+                    <button onClick={() => setZoom(z => Math.max(0.3, z - 0.2))} className="w-10 h-10 flex items-center justify-center bg-white/5 hover:bg-white/10 rounded-xl transition-all text-white font-bold text-xl">-</button>
+                    <div className="w-px h-6 bg-white/10 mx-2 self-center" />
+                    <button onClick={() => { setOffset({ x: 0, y: 0 }); setZoom(1); }} className="px-4 py-2 flex items-center justify-center bg-white/5 hover:bg-white/10 rounded-xl transition-all text-[11px] font-black tracking-widest text-gray-400">RESET CORE</button>
                 </div>
             </div>
         </div>
     )
+}
+
+function isActiveAgent(agentId: string, activities: VisualizationActivityInput[]) {
+    return activities.some(a => a.agentId === agentId)
 }
