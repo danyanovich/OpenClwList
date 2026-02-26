@@ -63,6 +63,7 @@ export const translations = {
         'agents.download_zip': 'Download ZIP',
         'agents.refresh': 'Refresh Fleet',
         'agents.uncategorized': 'Uncategorized',
+        'agents.discovered': 'Discovered',
 
         // Tasks (Kanban)
         'tasks.title': 'Kanban Board',
@@ -202,6 +203,7 @@ export const translations = {
         'agents.download_zip': 'Скачать ZIP',
         'agents.refresh': 'Обновить',
         'agents.uncategorized': 'Без категории',
+        'agents.discovered': 'Обнаружен',
 
         // Tasks (Kanban)
         'tasks.title': 'Канбан-доска',

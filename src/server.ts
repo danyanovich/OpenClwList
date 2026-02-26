@@ -7,7 +7,7 @@ import { promisify } from 'node:util'
 import express from 'express'
 import next from 'next'
 import JSON5 from 'json5'
-import { createTask, deleteTask, getGraph, getRecentEvents, getRunEvents, getRuns, getSessions, getTask, insertEvent, listTasks, updateAutoTaskStatusByRun, updateTaskFields, updateTaskSessionKey, updateTaskSourceRunId, updateTaskStatus, updateTaskTags, upsertAutoTaskForRun, upsertExec, upsertRun, upsertSession, getAnalytics, listSchedules, createSchedule, deleteSchedule, updateScheduleLastRun } from './db.js'
+import { createTask, deleteTask, getDistinctAgents, getGraph, getRecentEvents, getRunEvents, getRuns, getSessions, getTask, insertEvent, listTasks, updateAutoTaskStatusByRun, updateTaskFields, updateTaskSessionKey, updateTaskSourceRunId, updateTaskStatus, updateTaskTags, upsertAutoTaskForRun, upsertExec, upsertRun, upsertSession, getAnalytics, listSchedules, createSchedule, deleteSchedule, updateScheduleLastRun } from './db.js'
 import { createRequire } from 'module'
 const require = createRequire(import.meta.url)
 const cronParser = require('cron-parser')
@@ -547,6 +547,20 @@ app.get('/api/agents', (_req, res) => {
   try {
     const config = getOpenClawConfig()
     const agentsList = config?.agents?.list || []
+
+    // If no agents in local config, derive from sessions (remote gateway scenario)
+    if (agentsList.length === 0) {
+      const discovered = getDistinctAgents()
+      const discoveredAgents = discovered.map((d) => ({
+        id: d.agentId,
+        name: d.agentId,
+        discovered: true,
+        lastActivityAt: d.lastActivityAt,
+        sessionCount: d.sessionCount,
+      }))
+      res.json({ ok: true, agents: discoveredAgents, subagents: {} })
+      return
+    }
 
     // Enhance agents with instructions
     const enhancedAgents = agentsList.map((agent: any) => {
