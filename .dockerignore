@@ -4,3 +4,9 @@ node_modules
 *.md
 .env*
 .DS_Store
+data
+logs
+*.log
+tsconfig.tsbuildinfo
+.vscode
+.claude

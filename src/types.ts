@@ -84,3 +84,50 @@ export type TaskItem = {
   tags?: string[]
   topic?: string
 }
+
+export type OpsMode = 'local' | 'remote'
+
+export type HostConfig = {
+  id: string
+  name: string
+  gatewayUrl: string
+  enabled: boolean
+  gatewayToken?: string
+  gatewayTokenEnv?: string
+  gatewayTokenSource?: string
+}
+
+export type HostRuntimeState = {
+  connected: boolean
+  connecting: boolean
+  lastError?: string
+  lastConnectAt?: number
+  lastDisconnectAt?: number
+}
+
+export type HostSummary = {
+  id: string
+  name: string
+  enabled: boolean
+  gatewayUrl: string
+  connected: boolean
+  connecting: boolean
+  lastError?: string
+  lastConnectAt?: number
+  lastDisconnectAt?: number
+}
+
+export type AgentCapabilities = {
+  ok: true
+  mode: OpsMode
+  authEnabled: boolean
+  dangerousActionsEnabled: boolean
+  multiHost: boolean
+  defaultHostId: string
+}
+
+export type RequestPolicyContext = {
+  mode: OpsMode
+  authEnabled: boolean
+  dangerousActionsEnabled: boolean
+}

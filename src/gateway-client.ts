@@ -60,6 +60,10 @@ export class GatewayClient {
     return this.connected
   }
 
+  isConnecting(): boolean {
+    return this.connecting
+  }
+
   incrementParserErrors(): void {
     this.diagnostics.parserErrors += 1
   }

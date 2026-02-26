@@ -7,51 +7,30 @@ import { promisify } from 'node:util'
 import express from 'express'
 import next from 'next'
 import JSON5 from 'json5'
-import { createTask, deleteTask, getGraph, getRecentEvents, getRunEvents, getRuns, getSessions, getTask, insertEvent, listTasks, updateAutoTaskStatusByRun, updateTaskFields, updateTaskSessionKey, updateTaskSourceRunId, updateTaskStatus, updateTaskTags, upsertAutoTaskForRun, upsertExec, upsertRun, upsertSession, getAnalytics, listSchedules, createSchedule, deleteSchedule, updateScheduleLastRun } from './db.js'
+import { createTask, deleteTask, getDistinctAgents, getGraph, getRecentEvents, getRunEvents, getRuns, getSessions, getTask, insertEvent, listTasks, updateAutoTaskStatusByRun, updateTaskFields, updateTaskSessionKey, updateTaskSourceRunId, updateTaskStatus, updateTaskTags, upsertAutoTaskForRun, upsertExec, upsertRun, upsertSession, getAnalytics, listSchedules, createSchedule, deleteSchedule, updateScheduleLastRun } from './db.js'
 import { createRequire } from 'module'
 const require = createRequire(import.meta.url)
 const cronParser = require('cron-parser')
-import { GatewayClient } from './gateway-client.js'
+import { loadConfig } from './config.js'
+import { HostManager } from './host-manager.js'
 import { inferSessionFromListRow, parseGatewayEvent } from './parser.js'
-import type { Diagnostics, MonitorEvent, ParsedEnvelope, TaskStatus } from './types.js'
+import { buildCapabilities, buildPolicyContext, createDangerousActionsMiddleware } from './security.js'
+import type { Diagnostics, ParsedEnvelope, TaskStatus } from './types.js'
 
 const execAsync = promisify(exec)
 
-const PORT = Number(process.env.PORT || 3010)
-const HOST = process.env.HOST || '127.0.0.1'
-const GATEWAY_URL = process.env.CLAWDBOT_URL || 'ws://127.0.0.1:18789'
+const config = loadConfig()
+const PORT = config.port
+const HOST = config.host
 const MAX_QUEUE = Number(process.env.OPS_UI_MAX_QUEUE || 5000)
 const NOISY_EVENT_BACKPRESSURE_DROP = true
-
-function detectGatewayToken(): { token?: string; source: string } {
-  const envToken = process.env.CLAWDBOT_API_TOKEN?.trim()
-  if (envToken) {
-    return { token: envToken, source: 'env:CLAWDBOT_API_TOKEN' }
-  }
-
-  const configPath = process.env.OPENCLAW_CONFIG_PATH?.trim() || path.join(os.homedir(), '.openclaw', 'openclaw.json')
-  if (!fs.existsSync(configPath)) {
-    return { source: `not found: ${configPath}` }
-  }
-
-  try {
-    const raw = fs.readFileSync(configPath, 'utf8')
-    const parsed = JSON5.parse(raw) as { gateway?: { auth?: { token?: string } } }
-    const token = parsed?.gateway?.auth?.token?.trim()
-    if (token) {
-      return { token, source: `config:${configPath}` }
-    }
-    return { source: `token missing in ${configPath}` }
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error)
-    return { source: `parse error in ${configPath}: ${message}` }
-  }
-}
-
-const TOKEN_DETECTION = detectGatewayToken()
-const GATEWAY_TOKEN = TOKEN_DETECTION.token
+const RUNTIME_HOST_OVERRIDES_PATH = path.resolve(process.cwd(), 'data', 'host-overrides.json')
+const RUNTIME_DASHBOARD_AUTH_PATH = path.resolve(process.cwd(), 'data', 'dashboard-auth.json')
 
 const app = express()
+if (config.trustProxy) {
+  app.set('trust proxy', 1)
+}
 app.use(express.json({ limit: '256kb' }))
 
 // --- Security Headers ---
@@ -97,6 +76,129 @@ setInterval(() => {
   }
 }, 300_000)
 
+type RuntimeDashboardAuth = {
+  authEnabled?: boolean
+  bearerToken?: string
+  configuredAt?: number
+}
+
+type DashboardAuthState = {
+  authEnabled: boolean
+  bearerToken?: string
+  source: 'env' | 'runtime' | 'bootstrap'
+}
+
+function readRuntimeDashboardAuth(): RuntimeDashboardAuth {
+  try {
+    if (!fs.existsSync(RUNTIME_DASHBOARD_AUTH_PATH)) return {}
+    return JSON.parse(fs.readFileSync(RUNTIME_DASHBOARD_AUTH_PATH, 'utf8')) as RuntimeDashboardAuth
+  } catch (error) {
+    console.warn('[ops-ui] failed to read dashboard auth runtime state:', error instanceof Error ? error.message : String(error))
+    return {}
+  }
+}
+
+function writeRuntimeDashboardAuth(value: RuntimeDashboardAuth): void {
+  fs.mkdirSync(path.dirname(RUNTIME_DASHBOARD_AUTH_PATH), { recursive: true })
+  fs.writeFileSync(RUNTIME_DASHBOARD_AUTH_PATH, JSON.stringify(value, null, 2), 'utf8')
+}
+
+let runtimeDashboardAuth = readRuntimeDashboardAuth()
+
+function getDashboardAuthState(): DashboardAuthState {
+  if (config.bearerToken) {
+    return {
+      authEnabled: config.authEnabled,
+      bearerToken: config.bearerToken,
+      source: 'env',
+    }
+  }
+
+  const runtimeToken = runtimeDashboardAuth.bearerToken?.trim()
+  if (runtimeToken) {
+    return {
+      authEnabled: runtimeDashboardAuth.authEnabled ?? config.authEnabled,
+      bearerToken: runtimeToken,
+      source: 'runtime',
+    }
+  }
+
+  return {
+    authEnabled: false,
+    bearerToken: undefined,
+    source: 'bootstrap',
+  }
+}
+
+function getApiBearerFromRequest(req: express.Request): string | undefined {
+  const header = req.header('authorization')
+  if (header) {
+    const [scheme, token] = header.split(/\s+/, 2)
+    if (scheme?.toLowerCase() === 'bearer' && token) return token.trim()
+  }
+  if (typeof req.query.access_token === 'string' && req.query.access_token.trim()) {
+    return req.query.access_token.trim()
+  }
+  const cookieHeader = req.header('cookie')
+  if (cookieHeader) {
+    const parts = cookieHeader.split(';').map((p) => p.trim())
+    const tokenPart = parts.find((p) => p.startsWith('ops_ui_token='))
+    if (tokenPart) return decodeURIComponent(tokenPart.slice('ops_ui_token='.length))
+  }
+  return undefined
+}
+
+function isBootstrapSetupOpen(): boolean {
+  return getDashboardAuthState().source === 'bootstrap'
+}
+
+app.get('/health', (_req, res) => {
+  res.json({
+    ok: true,
+    service: 'ops-agent',
+    mode: config.mode,
+    version: process.env.npm_package_version || '0.0.0',
+    bootstrapSetupRequired: isBootstrapSetupOpen(),
+  })
+})
+const requireDangerousActions = createDangerousActionsMiddleware({
+  dangerousActionsEnabled: config.dangerousActionsEnabled,
+})
+
+app.get('/api/setup/bootstrap-status', (_req, res) => {
+  const authState = getDashboardAuthState()
+  res.json({
+    ok: true,
+    bootstrapRequired: authState.source === 'bootstrap',
+    mode: config.mode,
+    authConfigured: authState.source !== 'bootstrap',
+    dangerousActionsEnabled: config.dangerousActionsEnabled,
+    authSource: authState.source,
+  })
+})
+
+app.use('/api', (req, res, next) => {
+  if (req.path === '/setup/bootstrap-status') {
+    next()
+    return
+  }
+  if (req.path === '/setup/bootstrap' && isBootstrapSetupOpen()) {
+    next()
+    return
+  }
+  const authState = getDashboardAuthState()
+  if (!authState.authEnabled) {
+    next()
+    return
+  }
+  const token = getApiBearerFromRequest(req)
+  if (!token || token !== authState.bearerToken) {
+    res.status(401).json({ ok: false, error: 'Unauthorized' })
+    return
+  }
+  next()
+})
+
 app.get('/skill', (_req, res) => {
   const skillPath = path.resolve(process.cwd(), 'public', 'skill.md')
   if (fs.existsSync(skillPath)) {
@@ -107,7 +209,7 @@ app.get('/skill', (_req, res) => {
   }
 })
 
-app.post('/api/system/update', async (_req, res) => {
+app.post('/api/system/update', requireDangerousActions, async (_req, res) => {
   try {
     console.log('[ops-ui] Manual update triggered...')
     // Save local changes
@@ -178,6 +280,7 @@ app.post('/api/system/settings', (req, res) => {
 setInterval(async () => {
   try {
     const settings = getSettings()
+    if (!config.dangerousActionsEnabled) return
     if (settings.autoUpdateEnabled && settings.autoUpdateIntervalMinutes > 0) {
       const now = Date.now()
       const lastUpdateAt = settings.lastUpdateAt || 0
@@ -210,7 +313,130 @@ app.use(express.static(path.resolve(process.cwd(), 'public')))
 
 const MAX_SSE_CONNECTIONS = 50
 
-const gateway = new GatewayClient(GATEWAY_URL, GATEWAY_TOKEN)
+const hostManager = new HostManager(config.hosts, config.defaultHostId)
+let gateway = hostManager.getActiveClient()
+
+type RuntimeHostOverrides = {
+  hosts?: Record<string, { gatewayUrl?: string; gatewayToken?: string }>
+}
+
+function readRuntimeHostOverrides(): RuntimeHostOverrides {
+  try {
+    if (!fs.existsSync(RUNTIME_HOST_OVERRIDES_PATH)) return {}
+    const raw = fs.readFileSync(RUNTIME_HOST_OVERRIDES_PATH, 'utf8')
+    const parsed = JSON.parse(raw) as RuntimeHostOverrides
+    return parsed && typeof parsed === 'object' ? parsed : {}
+  } catch (error) {
+    console.warn('[ops-ui] failed to read host overrides:', error instanceof Error ? error.message : String(error))
+    return {}
+  }
+}
+
+function writeRuntimeHostOverrides(data: RuntimeHostOverrides): void {
+  fs.mkdirSync(path.dirname(RUNTIME_HOST_OVERRIDES_PATH), { recursive: true })
+  fs.writeFileSync(RUNTIME_HOST_OVERRIDES_PATH, JSON.stringify(data, null, 2), 'utf8')
+}
+
+function applyRuntimeHostOverrides(): void {
+  const overrides = readRuntimeHostOverrides()
+  const hostEntries = overrides.hosts || {}
+  for (const [hostId, override] of Object.entries(hostEntries)) {
+    if (!override || typeof override !== 'object') continue
+    try {
+      hostManager.updateHostConnection(hostId, {
+        gatewayUrl: typeof override.gatewayUrl === 'string' && override.gatewayUrl.trim() ? override.gatewayUrl.trim() : undefined,
+        gatewayToken: typeof override.gatewayToken === 'string' && override.gatewayToken.trim() ? override.gatewayToken.trim() : undefined,
+        gatewayTokenSource: 'runtime:data/host-overrides.json',
+      })
+    } catch (error) {
+      console.warn(`[ops-ui] skipped host override for ${hostId}:`, error instanceof Error ? error.message : String(error))
+    }
+  }
+  gateway = hostManager.getActiveClient()
+}
+
+applyRuntimeHostOverrides()
+
+app.post('/api/setup/bootstrap', async (req, res) => {
+  if (!isBootstrapSetupOpen()) {
+    res.status(403).json({ ok: false, error: 'Bootstrap setup is disabled (dashboard token already configured)' })
+    return
+  }
+  const body = (req.body && typeof req.body === 'object' ? req.body : {}) as {
+    dashboardToken?: string
+    gatewayToken?: string
+    gatewayUrl?: string
+    hostId?: string
+    connect?: boolean
+  }
+  const dashboardToken = typeof body.dashboardToken === 'string' ? body.dashboardToken.trim() : ''
+  const gatewayToken = typeof body.gatewayToken === 'string' ? body.gatewayToken.trim() : ''
+  const gatewayUrl = typeof body.gatewayUrl === 'string' ? body.gatewayUrl.trim() : ''
+  const hostId = typeof body.hostId === 'string' && body.hostId.trim() ? body.hostId.trim() : hostManager.getActiveHostId()
+  const connectNow = body.connect !== false
+  if (!dashboardToken) {
+    res.status(400).json({ ok: false, error: 'dashboardToken is required' })
+    return
+  }
+  runtimeDashboardAuth = {
+    authEnabled: true,
+    bearerToken: dashboardToken,
+    configuredAt: Date.now(),
+  }
+  writeRuntimeDashboardAuth(runtimeDashboardAuth)
+
+  let gatewayConnected = false
+  let warning: string | undefined
+  try {
+    if (hostId !== hostManager.getActiveHostId()) {
+      setActiveHost(hostId)
+    }
+    if (gatewayToken) {
+      const activeHost = hostManager.getHost(hostId)
+      const resolvedGatewayUrl = gatewayUrl || activeHost.gatewayUrl
+      hostManager.updateHostConnection(hostId, {
+        gatewayUrl: resolvedGatewayUrl,
+        gatewayToken,
+        gatewayTokenSource: 'runtime:data/host-overrides.json',
+      })
+      if (hostId === hostManager.getActiveHostId()) {
+        gateway = hostManager.getActiveClient()
+        resetActiveGatewayBuffers()
+      }
+      const overrides = readRuntimeHostOverrides()
+      const hosts = overrides.hosts || {}
+      hosts[hostId] = { ...(hosts[hostId] || {}), gatewayUrl: resolvedGatewayUrl, gatewayToken }
+      writeRuntimeHostOverrides({ ...overrides, hosts })
+    }
+    if (connectNow) {
+      await hostManager.connect(hostId)
+      gatewayConnected = true
+      if (hostId === hostManager.getActiveHostId()) {
+        try {
+          await refreshSessions()
+        } catch (error) {
+          if (isMissingScopeError(error)) warning = error instanceof Error ? error.message : String(error)
+          else throw error
+        }
+      }
+    }
+  } catch (error) {
+    res.status(isGatewayUnavailableError(error) ? 503 : 500).json({
+      ok: false,
+      error: error instanceof Error ? error.message : String(error),
+      authConfigured: true,
+    })
+    return
+  }
+
+  res.json({
+    ok: true,
+    authConfigured: true,
+    gatewayConnected,
+    warning,
+    activeHostId: hostManager.getActiveHostId(),
+  })
+})
 
 const sseClients = new Set<express.Response>()
 const processQueue: Array<{ event: string; payload?: unknown; seq?: number }> = []
@@ -227,7 +453,7 @@ const runtimeDiagnostics: Diagnostics = {
 }
 
 function mergeDiagnostics(): Diagnostics {
-  const gw = gateway.getDiagnostics()
+  const gw = hostManager.getActiveDiagnostics()
   return {
     ...runtimeDiagnostics,
     ...gw,
@@ -236,6 +462,13 @@ function mergeDiagnostics(): Diagnostics {
     droppedNoisyEvents: runtimeDiagnostics.droppedNoisyEvents + gw.droppedNoisyEvents,
     queuedEvents: processQueue.length,
   }
+}
+
+function resetActiveGatewayBuffers(): void {
+  processQueue.length = 0
+  lastSeqByEvent = new Map<string, number>()
+  gateway.setQueuedEvents(0)
+  runtimeDiagnostics.queuedEvents = 0
 }
 
 function broadcastSse(payload: unknown): void {
@@ -523,9 +756,21 @@ function isMissingScopeError(error: unknown): boolean {
   return message.toLowerCase().includes('missing scope')
 }
 
-gateway.onEvent((evt) => {
+hostManager.onActiveEvent((evt) => {
   enqueueGatewayEvent(evt)
 })
+
+function isGatewayUnavailableError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error)
+  return message.toLowerCase().includes('gateway is not connected')
+}
+
+function setActiveHost(hostId: string): void {
+  hostManager.selectHost(hostId)
+  gateway = hostManager.getActiveClient()
+  resetActiveGatewayBuffers()
+  broadcastSse({ type: 'host.changed', hostId, ts: Date.now() })
+}
 
 // --- Agent Management API ---
 
@@ -579,6 +824,20 @@ app.get('/api/agents', (_req, res) => {
       if (!mergedAgents.some(a => a.id === fsAgent.id)) {
         mergedAgents.push(fsAgent)
       }
+    }
+
+    // If no agents in local config, derive from sessions (remote gateway scenario)
+    if (agentsList.length === 0) {
+      const discovered = getDistinctAgents()
+      const discoveredAgents = discovered.map((d) => ({
+        id: d.agentId,
+        name: d.agentId,
+        discovered: true,
+        lastActivityAt: d.lastActivityAt,
+        sessionCount: d.sessionCount,
+      }))
+      res.json({ ok: true, agents: discoveredAgents, subagents: {} })
+      return
     }
 
     // Enhance agents with instructions
@@ -744,7 +1003,7 @@ app.get('/api/agents/:id/export', (req, res) => {
   }
 })
 
-app.delete('/api/agents/:id', (req, res) => {
+app.delete('/api/agents/:id', requireDangerousActions, (req, res) => {
   try {
     const config = getOpenClawConfig()
     if (!config.agents?.list) {
@@ -768,6 +1027,157 @@ app.delete('/api/agents/:id', (req, res) => {
 })
 
 // --- End Agent API ---
+
+app.get('/api/system/capabilities', (_req, res) => {
+  const authState = getDashboardAuthState()
+  res.json(buildCapabilities({
+    mode: config.mode,
+    authEnabled: authState.authEnabled,
+    dangerousActionsEnabled: config.dangerousActionsEnabled,
+    defaultHostId: config.defaultHostId,
+    multiHost: config.hosts.length > 1,
+  }))
+})
+
+app.get('/api/hosts', (_req, res) => {
+  res.json({
+    ok: true,
+    hosts: hostManager.listHosts(),
+    activeHostId: hostManager.getActiveHostId(),
+    policy: buildPolicyContext({
+      mode: config.mode,
+      authEnabled: config.authEnabled,
+      dangerousActionsEnabled: config.dangerousActionsEnabled,
+    }),
+  })
+})
+
+app.post('/api/hosts/select', (req, res) => {
+  const body = (req.body && typeof req.body === 'object' ? req.body : {}) as { hostId?: string }
+  const hostId = typeof body.hostId === 'string' ? body.hostId.trim() : ''
+  if (!hostId) {
+    res.status(400).json({ ok: false, error: 'hostId is required' })
+    return
+  }
+  try {
+    setActiveHost(hostId)
+    res.json({ ok: true, activeHostId: hostManager.getActiveHostId() })
+  } catch (error) {
+    res.status(404).json({ ok: false, error: error instanceof Error ? error.message : String(error) })
+  }
+})
+
+app.post('/api/hosts/:id/connect', async (req, res) => {
+  const hostId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id
+  try {
+    await hostManager.connect(hostId)
+    if (hostId === hostManager.getActiveHostId()) {
+      try {
+        await refreshSessions()
+      } catch (error) {
+        if (isMissingScopeError(error)) {
+          res.json({ ok: true, connected: true, warning: error instanceof Error ? error.message : String(error) })
+          return
+        }
+        throw error
+      }
+    }
+    res.json({ ok: true, connected: true, hostId })
+  } catch (error) {
+    const status = isGatewayUnavailableError(error) ? 503 : 500
+    res.status(status).json({ ok: false, error: error instanceof Error ? error.message : String(error) })
+  }
+})
+
+app.post('/api/hosts/:id/disconnect', requireDangerousActions, (req, res) => {
+  const hostId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id
+  try {
+    hostManager.disconnect(hostId)
+    res.json({ ok: true, hostId })
+  } catch (error) {
+    res.status(404).json({ ok: false, error: error instanceof Error ? error.message : String(error) })
+  }
+})
+
+app.post('/api/hosts/:id/credentials', requireDangerousActions, async (req, res) => {
+  const hostId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id
+  const body = (req.body && typeof req.body === 'object' ? req.body : {}) as {
+    gatewayUrl?: string
+    gatewayToken?: string
+    connect?: boolean
+  }
+  const gatewayUrl = typeof body.gatewayUrl === 'string' ? body.gatewayUrl.trim() : ''
+  const gatewayToken = typeof body.gatewayToken === 'string' ? body.gatewayToken.trim() : ''
+  const connectNow = body.connect !== false
+  if (!gatewayToken) {
+    res.status(400).json({ ok: false, error: 'gatewayToken is required' })
+    return
+  }
+  try {
+    const currentHost = hostManager.getHost(hostId)
+    const resolvedGatewayUrl = gatewayUrl || currentHost.gatewayUrl
+    try {
+      // Validate URL early for cleaner UI errors.
+      const url = new URL(resolvedGatewayUrl)
+      if (url.protocol !== 'ws:' && url.protocol !== 'wss:') {
+        res.status(400).json({ ok: false, error: 'gatewayUrl must use ws:// or wss://' })
+        return
+      }
+    } catch (error) {
+      res.status(400).json({ ok: false, error: `Invalid gatewayUrl: ${error instanceof Error ? error.message : String(error)}` })
+      return
+    }
+
+    hostManager.updateHostConnection(hostId, {
+      gatewayUrl: resolvedGatewayUrl,
+      gatewayToken,
+      gatewayTokenSource: 'runtime:data/host-overrides.json',
+    })
+    if (hostId === hostManager.getActiveHostId()) {
+      gateway = hostManager.getActiveClient()
+      resetActiveGatewayBuffers()
+      broadcastSse({ type: 'host.changed', hostId, ts: Date.now() })
+    }
+
+    const overrides = readRuntimeHostOverrides()
+    const hosts = overrides.hosts || {}
+    hosts[hostId] = {
+      ...(hosts[hostId] || {}),
+      gatewayUrl: resolvedGatewayUrl,
+      gatewayToken,
+    }
+    writeRuntimeHostOverrides({ ...overrides, hosts })
+
+    let warning: string | undefined
+    let connected = false
+    if (connectNow) {
+      await hostManager.connect(hostId)
+      connected = true
+      if (hostId === hostManager.getActiveHostId()) {
+        try {
+          await refreshSessions()
+        } catch (error) {
+          if (isMissingScopeError(error)) {
+            warning = error instanceof Error ? error.message : String(error)
+          } else {
+            throw error
+          }
+        }
+      }
+    }
+
+    res.json({
+      ok: true,
+      hostId,
+      connected,
+      warning,
+      activeHostId: hostManager.getActiveHostId(),
+    })
+  } catch (error) {
+    const status = isGatewayUnavailableError(error) ? 503 : 500
+    res.status(status).json({ ok: false, error: error instanceof Error ? error.message : String(error) })
+  }
+})
 
 app.get('/api/monitor/sessions', (req, res) => {
   const from = req.query.from ? Number(req.query.from) : undefined
@@ -809,6 +1219,7 @@ app.get('/api/monitor/diagnostics', (_req, res) => {
   res.json({
     diagnostics: mergeDiagnostics(),
     recentEvents: getRecentEvents(100),
+    activeHostId: hostManager.getActiveHostId(),
     // gatewayUrl intentionally redacted for security
     parserSchemaVersion: 1,
   })
@@ -894,7 +1305,7 @@ app.get('/api/monitor/events', (req, res) => {
   res.setHeader('Connection', 'keep-alive')
   res.flushHeaders()
 
-  res.write(`data: ${JSON.stringify({ type: 'connected', ts: Date.now() })}\n\n`)
+  res.write(`data: ${JSON.stringify({ type: 'connected', ts: Date.now(), hostId: hostManager.getActiveHostId() })}\n\n`)
   sseClients.add(res)
 
   const heartbeat = setInterval(() => {
@@ -914,7 +1325,7 @@ app.get('/api/monitor/events', (req, res) => {
 
 app.post('/api/monitor/connect', async (_req, res) => {
   try {
-    await gateway.connect()
+    await hostManager.connect(hostManager.getActiveHostId())
     try {
       await refreshSessions()
       res.json({ ok: true, connected: true })
@@ -927,12 +1338,13 @@ app.post('/api/monitor/connect', async (_req, res) => {
       throw error
     }
   } catch (error) {
-    res.status(500).json({ ok: false, error: error instanceof Error ? error.message : String(error) })
+    const status = isGatewayUnavailableError(error) ? 503 : 500
+    res.status(status).json({ ok: false, error: error instanceof Error ? error.message : String(error) })
   }
 })
 
 app.post('/api/monitor/disconnect', (_req, res) => {
-  gateway.disconnect()
+  hostManager.disconnect(hostManager.getActiveHostId())
   res.json({ ok: true })
 })
 
@@ -946,11 +1358,12 @@ app.post('/api/monitor/refresh-sessions', async (_req, res) => {
       res.json({ ok: true, warning })
       return
     }
-    res.status(500).json({ ok: false, error: error instanceof Error ? error.message : String(error) })
+    const status = isGatewayUnavailableError(error) ? 503 : 500
+    res.status(status).json({ ok: false, error: error instanceof Error ? error.message : String(error) })
   }
 })
 
-app.post('/api/monitor/abort', async (req, res) => {
+app.post('/api/monitor/abort', requireDangerousActions, async (req, res) => {
   const body = (req.body && typeof req.body === 'object' ? req.body : {}) as { sessionKey?: string; runId?: string }
   const sessionKey = typeof body.sessionKey === 'string' ? body.sessionKey : ''
   const runId = typeof body.runId === 'string' ? body.runId : undefined
@@ -962,7 +1375,8 @@ app.post('/api/monitor/abort', async (req, res) => {
     const payload = await gateway.request('chat.abort', { sessionKey, runId })
     res.json({ ok: true, payload })
   } catch (error) {
-    res.status(500).json({ ok: false, error: error instanceof Error ? error.message : String(error) })
+    const status = isGatewayUnavailableError(error) ? 503 : 500
+    res.status(status).json({ ok: false, error: error instanceof Error ? error.message : String(error) })
   }
 })
 
@@ -1069,13 +1483,14 @@ app.post('/api/tasks/:id/approval', (req, res) => {
   res.json({ ok: true })
 })
 
-app.delete('/api/tasks/:id', (req, res) => {
-  const ok = deleteTask(req.params.id)
+app.delete('/api/tasks/:id', requireDangerousActions, (req, res) => {
+  const taskId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id
+  const ok = deleteTask(taskId)
   if (!ok) {
     res.status(404).json({ ok: false, error: 'Task not found' })
     return
   }
-  broadcastSse({ type: 'task_deleted', taskId: req.params.id, ts: Date.now() })
+  broadcastSse({ type: 'task_deleted', taskId, ts: Date.now() })
   res.json({ ok: true })
 })
 
@@ -1102,8 +1517,9 @@ app.post('/api/schedules', (req, res) => {
   }
 })
 
-app.delete('/api/schedules/:id', (req, res) => {
-  const ok = deleteSchedule(req.params.id)
+app.delete('/api/schedules/:id', requireDangerousActions, (req, res) => {
+  const scheduleId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id
+  const ok = deleteSchedule(scheduleId)
   res.json({ ok })
 })
 
@@ -1135,12 +1551,14 @@ nextApp.prepare().then(() => {
     } else {
       console.log(`[ops-ui] listening on http://${HOST}:${PORT}`)
     }
-    console.log(
-      `[ops-ui] gateway auth: ${GATEWAY_TOKEN ? `token loaded (${TOKEN_DETECTION.source})` : `no token (${TOKEN_DETECTION.source})`}`,
-    )
+    console.log(`[ops-ui] mode=${config.mode} auth=${config.authEnabled ? 'on' : 'off'} dangerous=${config.dangerousActionsEnabled ? 'on' : 'off'}`)
+    const authState = getDashboardAuthState()
+    console.log(`[ops-ui] dashboard auth source=${authState.source} enabled=${authState.authEnabled ? 'yes' : 'no'}`)
+    console.log(`[ops-ui] hosts: ${config.hosts.map((h) => `${h.id}=${h.gatewayUrl} (${h.gatewayToken ? `token:${h.gatewayTokenSource || 'yes'}` : `no-token:${h.gatewayTokenSource || 'n/a'}`})`).join(', ')}`)
+    console.log(`[ops-ui] active host: ${hostManager.getActiveHostId()}`)
     try {
-      await gateway.connect()
-      console.log('[ops-ui] connected to gateway')
+      await hostManager.connect(hostManager.getActiveHostId())
+      console.log(`[ops-ui] connected to gateway (${hostManager.getActiveHostId()})`)
       try {
         await refreshSessions()
       } catch (error) {

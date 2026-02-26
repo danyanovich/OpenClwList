@@ -6,6 +6,14 @@ import { useLanguage } from "./i18n/context"
 
 type TaskSummary = { planned: number; in_progress: number; review: number; done: number; total: number }
 type SessionInfo = { sessionKey: string; status: string }
+type Capabilities = {
+    mode: "local" | "remote"
+    dangerousActionsEnabled: boolean
+    authEnabled: boolean
+}
+type HostsResponse = {
+    activeHostId?: string
+}
 
 export default function DashboardPage() {
     const { t, lang, setLang } = useLanguage()
@@ -19,6 +27,8 @@ export default function DashboardPage() {
     const [autoUpdateEnabled, setAutoUpdateEnabled] = useState(false)
     const [autoUpdateInterval, setAutoUpdateInterval] = useState(60)
     const [savingSettings, setSavingSettings] = useState(false)
+    const [capabilities, setCapabilities] = useState<Capabilities | null>(null)
+    const [activeHostId, setActiveHostId] = useState<string>("")
 
     useEffect(() => {
         if (typeof window !== "undefined") {
@@ -29,14 +39,18 @@ export default function DashboardPage() {
     useEffect(() => {
         async function load() {
             try {
-                const [tasksRes, sessionsRes, settingsRes] = await Promise.all([
+                const [tasksRes, sessionsRes, settingsRes, capsRes, hostsRes] = await Promise.all([
                     fetch('/api/tasks'),
                     fetch('/api/monitor/sessions'),
-                    fetch('/api/system/settings')
+                    fetch('/api/system/settings'),
+                    fetch('/api/system/capabilities'),
+                    fetch('/api/hosts'),
                 ])
                 const tasksData = await tasksRes.json()
                 const sessionsData = await sessionsRes.json()
                 const settingsData = await settingsRes.json()
+                const capsData = await capsRes.json()
+                const hostsData = await hostsRes.json()
 
                 if (tasksData.tasks) {
                     const tasks = tasksData.tasks
@@ -53,6 +67,10 @@ export default function DashboardPage() {
                     setAutoUpdateEnabled(settingsData.settings.autoUpdateEnabled)
                     setAutoUpdateInterval(settingsData.settings.autoUpdateIntervalMinutes || 60)
                 }
+                if (capsRes.ok) setCapabilities(capsData)
+                if (hostsRes.ok) {
+                    if (typeof hostsData.activeHostId === 'string') setActiveHostId(hostsData.activeHostId)
+                }
             } catch (err) { console.error(err) }
             finally { setLoading(false) }
         }
@@ -60,6 +78,7 @@ export default function DashboardPage() {
     }, [])
 
     async function handleUpdate() {
+        if (capabilities && !capabilities.dangerousActionsEnabled) return
         setUpdating(true)
         setUpdateResult(null)
         try {
@@ -248,13 +267,24 @@ export default function DashboardPage() {
                                 </div>
                                 <button
                                     onClick={handleUpdate}
-                                    disabled={updating}
-                                    className={`flex items-center justify-center gap-2 px-6 py-3 rounded-xl font-bold transition-all shrink-0 w-full md:w-auto ${updating ? 'bg-gray-700 text-gray-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-500 text-white shadow-lg shadow-blue-500/20'}`}
+                                    disabled={updating || (capabilities ? !capabilities.dangerousActionsEnabled : false)}
+                                    className={`flex items-center justify-center gap-2 px-6 py-3 rounded-xl font-bold transition-all shrink-0 w-full md:w-auto ${(updating || (capabilities ? !capabilities.dangerousActionsEnabled : false)) ? 'bg-gray-700 text-gray-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-500 text-white shadow-lg shadow-blue-500/20'}`}
                                 >
                                     {updating ? <Clock className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
                                     {updating ? t('dashboard.update_running') : t('dashboard.update_check')}
                                 </button>
                             </div>
+
+                            {capabilities && (
+                                <div className={`w-full rounded-xl border px-4 py-3 text-xs text-left ${capabilities.dangerousActionsEnabled ? 'bg-emerald-500/5 border-emerald-500/20 text-emerald-400' : 'bg-amber-500/5 border-amber-500/20 text-amber-400'}`}>
+                                    <span className="font-semibold">
+                                        {capabilities.mode.toUpperCase()}
+                                    </span>
+                                    {activeHostId ? ` · host ${activeHostId}` : ''}
+                                    {' · '}
+                                    {capabilities.dangerousActionsEnabled ? 'dangerous actions enabled' : 'dangerous actions disabled by policy'}
+                                </div>
+                            )}
 
                             {updateResult && (
                                 <div className={`w-full mt-4 p-4 rounded-xl border font-mono text-xs text-left overflow-auto max-h-48 ${updateResult.success ? 'bg-green-500/5 border-green-500/20 text-green-400' : 'bg-red-500/5 border-red-500/20 text-red-400'}`}>

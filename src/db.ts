@@ -261,6 +261,28 @@ export function getSessions(filters: {
   }))
 }
 
+export function getDistinctAgents(): Array<{
+  agentId: string
+  lastActivityAt: number
+  sessionCount: number
+}> {
+  const rows = db
+    .prepare(
+      `SELECT agent_id, MAX(last_activity_at) as last_activity_at, COUNT(*) as session_count
+       FROM sessions
+       WHERE spawned_by IS NULL
+       GROUP BY agent_id
+       ORDER BY last_activity_at DESC`,
+    )
+    .all() as Array<Record<string, unknown>>
+
+  return rows.map((r) => ({
+    agentId: String(r.agent_id),
+    lastActivityAt: Number(r.last_activity_at),
+    sessionCount: Number(r.session_count),
+  }))
+}
+
 export function getRuns(filters: {
   sessionKey?: string
   agentId?: string

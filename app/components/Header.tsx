@@ -7,9 +7,24 @@ import { ThemeToggle } from "./ThemeToggle"
 import { LanguageToggle } from "./LanguageToggle"
 import Link from "next/link"
 
+type Capabilities = {
+    mode: "local" | "remote"
+    dangerousActionsEnabled: boolean
+    authEnabled?: boolean
+}
+
+type HostsResponse = {
+    hosts?: Array<{ id: string; name: string; connected?: boolean }>
+    activeHostId?: string
+}
+
 export function Header() {
     const { t } = useLanguage()
     const [connected, setConnected] = useState(true)
+    const [capabilities, setCapabilities] = useState<Capabilities | null>(null)
+    const [activeHostId, setActiveHostId] = useState<string>("")
+    const [hosts, setHosts] = useState<Array<{ id: string; name: string; connected?: boolean }>>([])
+    const [switchingHost, setSwitchingHost] = useState(false)
 
     useEffect(() => {
         let es: EventSource
@@ -33,6 +48,57 @@ export function Header() {
         }
     }, [])
 
+    useEffect(() => {
+        let cancelled = false
+        async function loadMeta() {
+            try {
+                const [capsRes, hostsRes] = await Promise.all([
+                    fetch('/api/system/capabilities'),
+                    fetch('/api/hosts'),
+                ])
+                if (!capsRes.ok || !hostsRes.ok) return
+                const caps = await capsRes.json() as Capabilities
+                const hosts = await hostsRes.json() as HostsResponse
+                if (cancelled) return
+                setCapabilities(caps)
+                setActiveHostId(hosts.activeHostId || "")
+                setHosts(Array.isArray(hosts.hosts) ? hosts.hosts : [])
+            } catch {
+                // ignore; header should stay functional even when APIs are unavailable
+            }
+        }
+        void loadMeta()
+        return () => {
+            cancelled = true
+        }
+    }, [])
+
+    async function handleHostChange(nextHostId: string) {
+        if (!nextHostId || nextHostId === activeHostId) return
+        setSwitchingHost(true)
+        try {
+            const res = await fetch('/api/hosts/select', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ hostId: nextHostId }),
+            })
+            if (!res.ok) {
+                const data = await res.json().catch(() => ({}))
+                throw new Error(data?.error || `Failed to switch host (${res.status})`)
+            }
+            setActiveHostId(nextHostId)
+            setTimeout(() => window.location.reload(), 200)
+        } catch (error) {
+            console.error(error)
+            setSwitchingHost(false)
+        }
+    }
+
+    function handleLogout() {
+        document.cookie = "ops_ui_token=; Path=/; Max-Age=0; SameSite=Lax"
+        window.location.reload()
+    }
+
     return (
         <header className="fixed top-0 left-0 right-0 z-50 px-6 py-4 flex items-center justify-between backdrop-blur-md bg-surface/70 border-b border-rim">
             <Link href="/" className="flex items-center gap-2 group">
@@ -52,6 +118,50 @@ export function Header() {
                         {connected ? t('app.connected') : t('app.offline')}
                     </span>
                 </div>
+
+                {capabilities && (
+                    <>
+                        {hosts.length > 1 && (
+                            <div className="hidden lg:flex items-center gap-2 px-2 py-1.5 rounded-full border border-rim bg-panel/70">
+                                <span className="text-[10px] font-bold uppercase tracking-wider text-dim px-1">Host</span>
+                                <select
+                                    value={activeHostId}
+                                    onChange={(e) => void handleHostChange(e.target.value)}
+                                    disabled={switchingHost}
+                                    className="bg-transparent text-xs font-semibold text-ink outline-none pr-2"
+                                >
+                                    {hosts.map((host) => (
+                                        <option key={host.id} value={host.id} className="text-black">
+                                            {host.name || host.id}{host.connected ? " • on" : ""}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+                        )}
+                        <div className={`hidden md:flex items-center gap-2 px-3 py-1.5 rounded-full border text-[11px] font-bold ${capabilities.mode === 'remote'
+                                ? 'bg-blue-500/10 border-blue-500/20 text-blue-400'
+                                : 'bg-dim/10 border-dim/20 text-dim'
+                            }`}>
+                            <span>{capabilities.mode.toUpperCase()}</span>
+                            {activeHostId && <span className="opacity-70">· {activeHostId}</span>}
+                        </div>
+                        {!capabilities.dangerousActionsEnabled && (
+                            <div className="hidden lg:flex items-center gap-2 px-3 py-1.5 rounded-full border text-[11px] font-bold bg-amber-500/10 border-amber-500/20 text-amber-400">
+                                <span>READ-MOSTLY</span>
+                            </div>
+                        )}
+                        {capabilities.authEnabled && (
+                            <button
+                                type="button"
+                                onClick={handleLogout}
+                                className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-full border text-[11px] font-bold border-rim bg-panel/70 text-dim hover:text-ink"
+                                title="Clear dashboard auth token"
+                            >
+                                <span>LOGOUT</span>
+                            </button>
+                        )}
+                    </>
+                )}
 
                 <div className="h-6 w-px bg-rim mx-1 hidden sm:block" />
 

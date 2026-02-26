@@ -7,7 +7,7 @@ import { useLanguage } from "../i18n/context"
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 
-type Agent = { id: string; name?: string; workspace?: string; agentDir?: string, role?: string, tags?: string[] }
+type Agent = { id: string; name?: string; workspace?: string; agentDir?: string, role?: string, tags?: string[], discovered?: boolean, lastActivityAt?: number, sessionCount?: number }
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type SubagentRun = any
 
@@ -240,7 +240,19 @@ export default function AgentsPage() {
                                                             {agent.id}
                                                         </div>
 
-                                                        {agent.tags && agent.tags.length > 0 && (
+                                                        {agent.discovered && (
+                                                            <div className="flex flex-wrap gap-1.5 mt-3">
+                                                                <span className="text-[10px] uppercase tracking-wider font-bold bg-info-dim text-info px-2 py-0.5 rounded-full border border-info/20">
+                                                                    {t('agents.discovered')}
+                                                                </span>
+                                                                {agent.sessionCount != null && (
+                                                                    <span className="text-[10px] uppercase tracking-wider font-bold bg-well text-dim px-2 py-0.5 rounded-full border border-rim">
+                                                                        {agent.sessionCount} session{agent.sessionCount !== 1 ? 's' : ''}
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                        )}
+                                                        {!agent.discovered && agent.tags && agent.tags.length > 0 && (
                                                             <div className="flex flex-wrap gap-1.5 mt-3">
                                                                 {agent.tags.map(tag => (
                                                                     <span key={tag} className="text-[10px] uppercase tracking-wider font-bold bg-well text-dim px-2 py-0.5 rounded-full border border-rim">
@@ -261,6 +273,7 @@ export default function AgentsPage() {
                                                         <span className="text-sm text-dim font-medium">{t('agents.active')}</span>
                                                     </div>
 
+                                                    {!agent.discovered && (
                                                     <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
                                                         <button
                                                             onClick={() => setViewingInstructions({
@@ -329,6 +342,7 @@ export default function AgentsPage() {
                                                             <Trash2 className="w-4 h-4" />
                                                         </button>
                                                     </div>
+                                                    )}
                                                 </div>
                                             </div>
                                         ))}
