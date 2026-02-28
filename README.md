@@ -76,7 +76,7 @@ Each **station** represents a real system interaction — agents animate toward 
 | `SYSTEM` | Slate | System / diagnostics event |
 
 **How to use it:**
-- Open `/simulation` via the dashboard (linked in the sidebar)
+- Open `/simulation` via the **Simulation Hub** button on the main Dashboard page
 - **Scroll** to zoom · **Drag** to pan across the canvas
 - **Hover** over an agent to see its current status and active station
 - Each agent shows a floating label with the exact action it is performing
