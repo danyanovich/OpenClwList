@@ -1,6 +1,8 @@
 # OpenClwList &nbsp;·&nbsp; `v0.01`
 
 > **Operational monitor UI for OpenClaw Gateway** — a soft, fast, bilingual (EN/RU) dashboard for managing agent fleets, tasks, schedules, and usage analytics.
+>
+> Built-in **Agent Simulation Hub** — a live tycoon-style visualization where you can see exactly what each agent is doing and how agents interact with every part of the system in real time.
 
 ---
 
@@ -8,18 +10,79 @@
 
 OpenClwList is a self-hosted web interface that connects to a running OpenClaw Gateway instance via WebSocket and gives you a real-time operational window into your AI agent fleet.
 
-```
-OpenClaw Gateway  ──ws──►  OpenClwList Backend (Express + SQLite)
-                                     │
-                          ┌──────────┴──────────┐
-                     Next.js UI             REST + SSE API
-                  (5 pages, SSR-free)       /api/monitor/*
-                                            /api/tasks
-                                            /api/schedules
-                                            /api/analytics
+```mermaid
+flowchart LR
+    GW(["OpenClaw Gateway"])
+    BE["OpenClwList Backend\nExpress + SQLite"]
+    UI["Next.js UI\n6 pages · SSR-free"]
+    API["REST + SSE API\n/api/monitor/*\n/api/tasks\n/api/schedules\n/api/analytics"]
+
+    GW -- "WebSocket" --> BE
+    BE -- "parsed events" --> API
+    API -- "SSE · real-time" --> UI
+    BE --> UI
 ```
 
 **Stack:** Node 24 · Express 5 · Next.js 16 · React 19 · Tailwind v4 · SQLite (`node:sqlite`) · TypeScript
+
+---
+
+## Agent Simulation Hub
+
+> **See your agents live.** The Simulation Hub is a real-time tycoon-style visualization — each agent is an animated character that physically moves to the station it is currently working at. You can observe the full fleet at a glance and understand what every agent is doing at any moment.
+
+```mermaid
+flowchart TD
+    GW(["OpenClaw Gateway"])
+    SSE["SSE event stream\n/api/monitor/events"]
+
+    GW -- "WebSocket events" --> SSE
+
+    subgraph Canvas["Agent Simulation Canvas (live, pannable, zoomable)"]
+        direction LR
+        A1["🤖 Agent A"]
+        A2["🤖 Agent B"]
+        A3["🤖 Agent C"]
+
+        CHAT["CHAT\n💬"]
+        TASKS["TASKS\n📋"]
+        TOOLS["TOOLS\n🔧"]
+        BROWSER["BROWSER\n🌐"]
+        DB["DB\n🗄️"]
+        CRON["CRON\n⏰"]
+        SYSTEM["SYSTEM\n⚙️"]
+
+        A1 -- "replying" --> CHAT
+        A1 -- "tool call" --> TOOLS
+        A2 -- "managing" --> TASKS
+        A2 -- "schedule" --> CRON
+        A3 -- "query" --> DB
+        A3 -- "automation" --> BROWSER
+    end
+
+    SSE -- "agent positions\n& activities" --> Canvas
+```
+
+Each **station** represents a real system interaction — agents animate toward their active station in real time:
+
+| Station | Color | What the agent is doing |
+|---|---|---|
+| `CHAT` | Blue | Replying to a user message |
+| `TASKS` | Emerald | Managing tasks or dispatching runs |
+| `TOOLS` | Indigo | Calling a tool or integration |
+| `BROWSER` | Cyan | Driving a browser or page interaction |
+| `DB` | Amber | Reading or writing to storage |
+| `CRON` | Purple | Handling a scheduled job |
+| `SYSTEM` | Slate | System / diagnostics event |
+
+**How to use it:**
+- Open `/simulation` via the dashboard (linked in the sidebar)
+- **Scroll** to zoom · **Drag** to pan across the canvas
+- **Hover** over an agent to see its current status and active station
+- Each agent shows a floating label with the exact action it is performing
+- The **Logic Load** gauge (top-left) shows the live percentage of running agent runs
+- The **Live Systems** panel highlights which stations are currently active
+- All data streams in via SSE with automatic reconnect — no page refresh needed
 
 ---
 
@@ -38,6 +101,7 @@ Paste this into your **OpenClaw Agent** to install the dashboard's capabilities 
 | **Dashboard** | Live connection badge, task summary counters, active sessions |
 | **Kanban Board** | Drag-and-drop task management with 5 columns: Planned → In Progress → Waiting Approval → Review → Done |
 | **Agent Nexus** | Fleet view of all active agents and sub-agents with export (clipboard / file / ZIP) |
+| **Simulation Hub** | Live tycoon-style canvas — animated agents move between stations, showing exactly what each agent is doing and how they interact with every system component |
 | **Cron Jobs** | Create and manage scheduled agent tasks with cron expressions |
 | **Cost Intelligence** | Token usage and cost analytics by agent, with 7/30/90-day filters |
 
@@ -229,9 +293,10 @@ OpenClwList/
 │   ├── page.tsx            # Dashboard
 │   ├── tasks/page.tsx      # Kanban Board
 │   ├── agents/page.tsx     # Agent Nexus
+│   ├── simulation/page.tsx # Agent Simulation Hub
 │   ├── schedules/page.tsx  # Cron Jobs
 │   ├── analytics/page.tsx  # Cost Intelligence
-│   ├── components/         # ThemeToggle, LanguageToggle
+│   ├── components/         # ThemeToggle, LanguageToggle, Visualization
 │   └── i18n/               # Translations (EN/RU) + context
 ├── src/
 │   ├── server.ts           # Express + Next.js server
