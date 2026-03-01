@@ -1,15 +1,5 @@
 import WebSocket from 'ws'
 import type { Diagnostics, GatewayFrame } from './types.js'
-import {
-  buildDeviceAuthPayload,
-  clearDeviceAuthToken,
-  loadDeviceAuthToken,
-  loadOrCreateDeviceIdentity,
-  publicKeyRawBase64UrlFromPem,
-  signDevicePayload,
-  storeDeviceAuthToken,
-  type DeviceIdentity,
-} from './device-auth.js'
 
 type EventHandler = (event: { event: string; payload?: unknown; seq?: number }) => void
 
@@ -21,7 +11,6 @@ type RequestResolver = {
 
 export class GatewayClient {
   private ws: WebSocket | null = null
-  private readonly deviceIdentity: DeviceIdentity
   private readonly role = 'operator'
   private readonly scopes = ['operator.admin']
   private connectNonce: string | null = null
@@ -41,7 +30,6 @@ export class GatewayClient {
     private readonly url: string,
     private readonly token?: string,
   ) {
-    this.deviceIdentity = loadOrCreateDeviceIdentity()
     this.diagnostics = {
       connected: false,
       reconnectAttempts: 0,
@@ -193,15 +181,6 @@ export class GatewayClient {
       ws.on('close', (code, reason) => {
         const reasonText = typeof reason === 'string' ? reason : reason.toString()
         this.diagnostics.lastError = `ws close code=${code} reason=${reasonText || 'n/a'}`
-        if (
-          code === 1008 &&
-          reasonText.toLowerCase().includes('device token mismatch')
-        ) {
-          clearDeviceAuthToken({
-            deviceId: this.deviceIdentity.deviceId,
-            role: this.role,
-          })
-        }
       })
 
       setTimeout(() => {
@@ -249,24 +228,8 @@ export class GatewayClient {
       clearTimeout(this.connectTimer)
       this.connectTimer = null
     }
-    const storedToken = loadDeviceAuthToken({
-      deviceId: this.deviceIdentity.deviceId,
-      role: this.role,
-    })?.token
-    const authToken = this.token ?? storedToken ?? undefined
-    const signedAtMs = Date.now()
-    const nonce = this.connectNonce ?? undefined
-    const payload = buildDeviceAuthPayload({
-      deviceId: this.deviceIdentity.deviceId,
-      clientId: 'cli',
-      clientMode: 'cli',
-      role: this.role,
-      scopes: this.scopes,
-      signedAtMs,
-      token: authToken ?? null,
-      nonce,
-    })
-    const signature = signDevicePayload(this.deviceIdentity.privateKeyPem, payload)
+
+    const authToken = this.token ?? undefined
 
     const frame = {
       type: 'req',
@@ -285,13 +248,6 @@ export class GatewayClient {
         auth: authToken ? { token: authToken } : undefined,
         role: this.role,
         scopes: this.scopes,
-        device: {
-          id: this.deviceIdentity.deviceId,
-          publicKey: publicKeyRawBase64UrlFromPem(this.deviceIdentity.publicKeyPem),
-          signature,
-          signedAt: signedAtMs,
-          nonce,
-        },
         locale: 'en-US',
         userAgent: 'ops-ui/0.1.0',
       },
@@ -313,14 +269,7 @@ export class GatewayClient {
   private onHelloOk(payload: {
     auth?: { deviceToken?: string; role?: string; scopes?: string[] }
   }): void {
-    const authInfo = payload.auth
-    if (!authInfo?.deviceToken) return
-    storeDeviceAuthToken({
-      deviceId: this.deviceIdentity.deviceId,
-      role: authInfo.role ?? this.role,
-      token: authInfo.deviceToken,
-      scopes: authInfo.scopes ?? [],
-    })
+    // Basic connection doesn't necessarily need to persist anything unless we need it
   }
 
   async request<T>(method: string, params?: unknown): Promise<T> {
