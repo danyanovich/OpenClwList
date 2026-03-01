@@ -39,38 +39,19 @@ export default function DashboardPage() {
     useEffect(() => {
         async function load() {
             try {
-                const [tasksRes, sessionsRes, settingsRes, capsRes, hostsRes] = await Promise.all([
-                    fetch('/api/tasks'),
-                    fetch('/api/monitor/sessions'),
-                    fetch('/api/system/settings'),
-                    fetch('/api/system/capabilities'),
-                    fetch('/api/hosts'),
-                ])
-                const tasksData = await tasksRes.json()
-                const sessionsData = await sessionsRes.json()
-                const settingsData = await settingsRes.json()
-                const capsData = await capsRes.json()
-                const hostsData = await hostsRes.json()
+                const res = await fetch('/api/dashboard/summary')
+                const data = await res.json()
 
-                if (tasksData.tasks) {
-                    const tasks = tasksData.tasks
-                    setTaskStats({
-                        planned: tasks.filter((t: any) => t.status === 'planned').length,
-                        in_progress: tasks.filter((t: any) => t.status === 'in_progress').length,
-                        review: tasks.filter((t: any) => t.status === 'review').length,
-                        done: tasks.filter((t: any) => t.status === 'done').length,
-                        total: tasks.length,
-                    })
+                if (data.taskStats) {
+                    setTaskStats(data.taskStats)
                 }
-                if (sessionsData.sessions) setSessions(sessionsData.sessions)
-                if (settingsData.settings) {
-                    setAutoUpdateEnabled(settingsData.settings.autoUpdateEnabled)
-                    setAutoUpdateInterval(settingsData.settings.autoUpdateIntervalMinutes || 60)
+                if (data.sessions) setSessions(data.sessions)
+                if (data.settings) {
+                    setAutoUpdateEnabled(data.settings.autoUpdateEnabled)
+                    setAutoUpdateInterval(data.settings.autoUpdateIntervalMinutes || 60)
                 }
-                if (capsRes.ok) setCapabilities(capsData)
-                if (hostsRes.ok) {
-                    if (typeof hostsData.activeHostId === 'string') setActiveHostId(hostsData.activeHostId)
-                }
+                if (data.capabilities) setCapabilities(data.capabilities)
+                if (typeof data.activeHostId === 'string') setActiveHostId(data.activeHostId)
             } catch (err) { console.error(err) }
             finally { setLoading(false) }
         }

@@ -1320,7 +1320,6 @@ app.get('/api/dashboard/summary', (_req, res) => {
     const sessions = getSessions({})
     const settings = getSettings()
     const authState = getDashboardAuthState()
-    const hostsData = hostManager.listHosts()
     const taskStats = {
       planned: tasks.filter(t => t.status === 'planned').length,
       in_progress: tasks.filter(t => t.status === 'in_progress').length,
