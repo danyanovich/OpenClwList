@@ -1,87 +1,93 @@
 "use client"
 
-import { useEffect, useState } from "react"
-import { CalendarClock, Trash2, Plus, ArrowLeft, Loader2, Bot, Info } from "lucide-react"
+import { useEffect, useState, useCallback } from "react"
+import { CalendarClock, Trash2, Plus, ArrowLeft, Bot, Info } from "lucide-react"
 import { useLanguage } from "../i18n/context"
-
-type ScheduleItem = {
-    id: string
-    cronExpr: string
-    sessionKey: string
-    prompt: string
-    createdAt: number
-    lastRunAt: number | null
-}
+import { useGateway } from "../contexts/GatewayContext"
+import {
+    loadSchedules,
+    createSchedule,
+    deleteSchedule,
+    markScheduleRun,
+    msUntilNextRun,
+    type ScheduleItem,
+} from "../lib/schedules"
 
 export default function SchedulesPage() {
     const { t } = useLanguage()
-    const [schedules, setSchedules] = useState<ScheduleItem[]>([])
-    const [loading, setLoading] = useState(true)
+    const { request, connected } = useGateway()
 
+    const [schedules, setSchedules] = useState<ScheduleItem[]>(() => loadSchedules())
     const [isAdding, setIsAdding] = useState(false)
     const [newCron, setNewCron] = useState("0 9 * * *")
     const [newSession, setNewSession] = useState("")
     const [newPrompt, setNewPrompt] = useState("")
     const [errorMsg, setErrorMsg] = useState("")
 
-    useEffect(() => {
-        loadSchedules()
-    }, [])
+    const refresh = useCallback(() => setSchedules(loadSchedules()), [])
 
-    const loadSchedules = async () => {
-        setLoading(true)
-        try {
-            const res = await fetch('/api/schedules')
-            const json = await res.json()
-            if (json.ok) setSchedules(json.schedules)
-        } catch (err) {
-            console.error(err)
-        } finally {
-            setLoading(false)
-        }
-    }
-
-    const handleCreate = async () => {
+    const handleCreate = () => {
         setErrorMsg("")
         if (!newCron.trim() || !newSession.trim() || !newPrompt.trim()) {
             setErrorMsg("Please fill in all fields (cron, session key, prompt).")
             return
         }
-        try {
-            const res = await fetch('/api/schedules', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    cronExpr: newCron.trim(),
-                    sessionKey: newSession.trim(),
-                    prompt: newPrompt.trim()
-                })
-            })
-            const json = await res.json()
-            if (!json.ok) {
-                setErrorMsg(json.error || "Failed to create schedule")
-                return
-            }
-            setIsAdding(false)
-            setNewCron("0 9 * * *")
-            setNewSession("")
-            setNewPrompt("")
-            loadSchedules()
-        } catch (err) {
-            console.error(err)
-            setErrorMsg("Network error occurred.")
+        if (msUntilNextRun(newCron.trim()) === null) {
+            setErrorMsg("Invalid cron expression. Use 5-part format: min hour dom month dow")
+            return
         }
+        createSchedule({ cronExpr: newCron.trim(), sessionKey: newSession.trim(), prompt: newPrompt.trim() })
+        refresh()
+        setIsAdding(false)
+        setNewCron("0 9 * * *")
+        setNewSession("")
+        setNewPrompt("")
     }
 
-    const handleDelete = async (id: string) => {
-        if (!confirm('Are you sure you want to delete this schedule?')) return
-        try {
-            await fetch(`/api/schedules/${id}`, { method: 'DELETE' })
-            loadSchedules()
-        } catch (err) {
-            console.error(err)
-        }
+    const handleDelete = (id: string) => {
+        if (!confirm('Delete this schedule?')) return
+        deleteSchedule(id)
+        refresh()
     }
+
+    // Browser-side cron runner — fires while page is open
+    useEffect(() => {
+        const timers = new Map<string, ReturnType<typeof setTimeout>>()
+
+        function scheduleNext(item: ScheduleItem) {
+            if (timers.has(item.id)) clearTimeout(timers.get(item.id)!)
+            const delay = msUntilNextRun(item.cronExpr)
+            if (delay === null) return
+            const timer = setTimeout(async () => {
+                if (connected) {
+                    try {
+                        await request('chat.send', {
+                            sessionKey: item.sessionKey,
+                            idempotencyKey: `sched:${item.id}:${Date.now()}`,
+                            message: item.prompt,
+                        })
+                        markScheduleRun(item.id)
+                        refresh()
+                    } catch (err) {
+                        console.warn('[schedules] chat.send failed:', err)
+                    }
+                }
+                // Re-schedule for next run
+                const updated = loadSchedules().find(s => s.id === item.id)
+                if (updated) scheduleNext(updated)
+            }, delay)
+            timers.set(item.id, timer)
+        }
+
+        for (const sched of schedules) scheduleNext(sched)
+
+        return () => {
+            for (const timer of timers.values()) clearTimeout(timer)
+            timers.clear()
+        }
+    // Re-run when schedules list changes
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [schedules.map(s => s.id).join(','), connected])
 
     return (
         <div className="min-h-screen bg-surface text-ink p-6 md:p-12 overflow-x-hidden relative font-sans">
@@ -92,6 +98,11 @@ export default function SchedulesPage() {
                     <a href="/agents" className="inline-flex items-center gap-2 text-sm font-bold text-dim hover:text-accent transition-colors uppercase tracking-wider">
                         <ArrowLeft className="w-4 h-4" /> {t('app.back_nexus')}
                     </a>
+                    {!connected && (
+                        <span className="text-xs text-warn bg-warn/10 border border-warn/20 px-3 py-1 rounded-full">
+                            Schedules only fire while connected
+                        </span>
+                    )}
                 </div>
 
                 <header className="mb-12 border-b border-rim pb-8 flex flex-col md:flex-row md:justify-between items-start md:items-end gap-4">
@@ -101,6 +112,7 @@ export default function SchedulesPage() {
                             {t('schedules.title')}
                         </h1>
                         <p className="text-dim mt-2 text-lg">{t('schedules.subtitle')}</p>
+                        <p className="text-mute text-xs mt-1">Schedules run in the browser — this tab must remain open</p>
                     </div>
                     <button
                         onClick={() => setIsAdding(!isAdding)}
@@ -114,52 +126,27 @@ export default function SchedulesPage() {
                 {isAdding && (
                     <div className="mb-12 bg-panel border border-rim p-6 md:p-8 rounded-3xl shadow-sm">
                         <h3 className="text-xl font-bold mb-6 text-ink">{t('schedules.create_title')}</h3>
-
                         {errorMsg && (
-                            <div className="mb-6 p-4 bg-err-dim border border-err/20 text-err rounded-xl text-sm font-medium">
-                                {errorMsg}
-                            </div>
+                            <div className="mb-6 p-4 bg-err-dim border border-err/20 text-err rounded-xl text-sm font-medium">{errorMsg}</div>
                         )}
-
                         <div className="space-y-6">
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                 <div>
                                     <label className="block text-xs font-bold text-dim uppercase tracking-wider mb-2">{t('schedules.cron_label')}</label>
-                                    <input
-                                        type="text"
-                                        value={newCron}
-                                        onChange={(e) => setNewCron(e.target.value)}
-                                        placeholder="0 9 * * *"
-                                        className="w-full bg-field border border-rim rounded-xl px-4 py-3 text-ink outline-none focus:border-accent/50 placeholder:text-mute"
-                                    />
+                                    <input type="text" value={newCron} onChange={(e) => setNewCron(e.target.value)} placeholder="0 9 * * *" className="w-full bg-field border border-rim rounded-xl px-4 py-3 text-ink outline-none focus:border-accent/50 placeholder:text-mute" />
                                     <p className="mt-2 text-xs text-mute flex items-center gap-1"><Info className="w-3 h-3" /> {t('schedules.cron_hint')}</p>
                                 </div>
                                 <div>
                                     <label className="block text-xs font-bold text-dim uppercase tracking-wider mb-2">{t('schedules.session_label')}</label>
-                                    <input
-                                        type="text"
-                                        value={newSession}
-                                        onChange={(e) => setNewSession(e.target.value)}
-                                        placeholder="session_key_..."
-                                        className="w-full bg-field border border-rim rounded-xl px-4 py-3 text-ink outline-none focus:border-accent/50 placeholder:text-mute"
-                                    />
+                                    <input type="text" value={newSession} onChange={(e) => setNewSession(e.target.value)} placeholder="agent:main:main" className="w-full bg-field border border-rim rounded-xl px-4 py-3 text-ink outline-none focus:border-accent/50 placeholder:text-mute" />
                                 </div>
                             </div>
                             <div>
                                 <label className="block text-xs font-bold text-dim uppercase tracking-wider mb-2">{t('schedules.prompt_label')}</label>
-                                <textarea
-                                    value={newPrompt}
-                                    onChange={(e) => setNewPrompt(e.target.value)}
-                                    placeholder={t('schedules.prompt_placeholder')}
-                                    rows={3}
-                                    className="w-full bg-field border border-rim rounded-xl px-4 py-3 text-ink outline-none focus:border-accent/50 resize-y placeholder:text-mute"
-                                ></textarea>
+                                <textarea value={newPrompt} onChange={(e) => setNewPrompt(e.target.value)} placeholder={t('schedules.prompt_placeholder')} rows={3} className="w-full bg-field border border-rim rounded-xl px-4 py-3 text-ink outline-none focus:border-accent/50 resize-y placeholder:text-mute" />
                             </div>
                             <div className="flex justify-end pt-2">
-                                <button
-                                    onClick={handleCreate}
-                                    className="px-6 py-3 bg-accent hover:bg-accent-hover text-white font-bold rounded-xl transition-colors shadow-lg shadow-accent/20 disabled:opacity-50"
-                                >
+                                <button onClick={handleCreate} className="px-6 py-3 bg-accent hover:bg-accent-hover text-white font-bold rounded-xl transition-colors shadow-lg shadow-accent/20">
                                     {t('schedules.save')}
                                 </button>
                             </div>
@@ -167,11 +154,7 @@ export default function SchedulesPage() {
                     </div>
                 )}
 
-                {loading ? (
-                    <div className="flex justify-center p-12">
-                        <Loader2 className="w-8 h-8 text-accent animate-spin" />
-                    </div>
-                ) : schedules.length === 0 ? (
+                {schedules.length === 0 ? (
                     <div className="flex flex-col items-center justify-center p-16 bg-panel border border-rim rounded-3xl text-center shadow-sm">
                         <CalendarClock className="w-16 h-16 text-mute mb-6" />
                         <h3 className="text-xl font-bold text-ink mb-2">{t('schedules.empty_title')}</h3>
@@ -185,11 +168,7 @@ export default function SchedulesPage() {
                                     <div className="bg-accent-dim border border-accent/20 text-accent font-mono text-sm px-3 py-1 rounded-lg shrink-0">
                                         {sched.cronExpr}
                                     </div>
-                                    <button
-                                        onClick={() => handleDelete(sched.id)}
-                                        className="text-mute hover:text-err transition-colors p-2 rounded-full hover:bg-err-dim"
-                                        title={t('schedules.delete')}
-                                    >
+                                    <button onClick={() => handleDelete(sched.id)} className="text-mute hover:text-err transition-colors p-2 rounded-full hover:bg-err-dim" title={t('schedules.delete')}>
                                         <Trash2 className="w-4 h-4" />
                                     </button>
                                 </div>

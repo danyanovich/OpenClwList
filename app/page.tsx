@@ -1,122 +1,30 @@
 "use client"
 
-import { useEffect, useState } from "react"
-import { Activity, Bot, CheckCircle2, Clock, ListTodo, Zap, ArrowRight, Copy, Check, RefreshCw } from "lucide-react"
+import { useMemo } from "react"
+import { Activity, Bot, CheckCircle2, Clock, ListTodo, Zap, ArrowRight, Copy, Check } from "lucide-react"
+import { useState } from "react"
 import { useLanguage } from "./i18n/context"
-
-type TaskSummary = { planned: number; in_progress: number; review: number; done: number; total: number }
-type SessionInfo = { sessionKey: string; status: string }
-type Capabilities = {
-    mode: "local" | "remote"
-    dangerousActionsEnabled: boolean
-    authEnabled: boolean
-}
-type HostsResponse = {
-    activeHostId?: string
-}
+import { useGateway } from "./contexts/GatewayContext"
+import { loadTasks } from "./lib/tasks"
 
 export default function DashboardPage() {
-    const { t, lang, setLang } = useLanguage()
-    const [taskStats, setTaskStats] = useState<TaskSummary>({ planned: 0, in_progress: 0, review: 0, done: 0, total: 0 })
-    const [sessions, setSessions] = useState<SessionInfo[]>([])
-    const [loading, setLoading] = useState(true)
+    const { t } = useLanguage()
+    const { sessions, connected } = useGateway()
     const [copied, setCopied] = useState(false)
-    const [updating, setUpdating] = useState(false)
-    const [updateResult, setUpdateResult] = useState<{ success: boolean; output?: string; error?: string } | null>(null)
-    const [skillUrl, setSkillUrl] = useState("")
-    const [autoUpdateEnabled, setAutoUpdateEnabled] = useState(false)
-    const [autoUpdateInterval, setAutoUpdateInterval] = useState(60)
-    const [savingSettings, setSavingSettings] = useState(false)
-    const [capabilities, setCapabilities] = useState<Capabilities | null>(null)
-    const [activeHostId, setActiveHostId] = useState<string>("")
 
-    useEffect(() => {
-        if (typeof window !== "undefined") {
-            setSkillUrl(`${window.location.origin}/skill`)
-        }
-    }, [])
+    const tasks = useMemo(() => loadTasks(), [])
 
-    useEffect(() => {
-        async function load() {
-            try {
-                const [tasksRes, sessionsRes, settingsRes, capsRes, hostsRes] = await Promise.all([
-                    fetch('/api/tasks'),
-                    fetch('/api/monitor/sessions'),
-                    fetch('/api/system/settings'),
-                    fetch('/api/system/capabilities'),
-                    fetch('/api/hosts'),
-                ])
-                const tasksData = await tasksRes.json()
-                const sessionsData = await sessionsRes.json()
-                const settingsData = await settingsRes.json()
-                const capsData = await capsRes.json()
-                const hostsData = await hostsRes.json()
+    const taskStats = useMemo(() => ({
+        planned: tasks.filter((t) => t.status === 'planned').length,
+        in_progress: tasks.filter((t) => t.status === 'in_progress').length,
+        review: tasks.filter((t) => t.status === 'review').length,
+        done: tasks.filter((t) => t.status === 'done').length,
+        total: tasks.length,
+    }), [tasks])
 
-                if (tasksData.tasks) {
-                    const tasks = tasksData.tasks
-                    setTaskStats({
-                        planned: tasks.filter((t: any) => t.status === 'planned').length,
-                        in_progress: tasks.filter((t: any) => t.status === 'in_progress').length,
-                        review: tasks.filter((t: any) => t.status === 'review').length,
-                        done: tasks.filter((t: any) => t.status === 'done').length,
-                        total: tasks.length,
-                    })
-                }
-                if (sessionsData.sessions) setSessions(sessionsData.sessions)
-                if (settingsData.settings) {
-                    setAutoUpdateEnabled(settingsData.settings.autoUpdateEnabled)
-                    setAutoUpdateInterval(settingsData.settings.autoUpdateIntervalMinutes || 60)
-                }
-                if (capsRes.ok) setCapabilities(capsData)
-                if (hostsRes.ok) {
-                    if (typeof hostsData.activeHostId === 'string') setActiveHostId(hostsData.activeHostId)
-                }
-            } catch (err) { console.error(err) }
-            finally { setLoading(false) }
-        }
-        load()
-    }, [])
+    const sessionList = useMemo(() => Array.from(sessions.values()), [sessions])
 
-    async function handleUpdate() {
-        if (capabilities && !capabilities.dangerousActionsEnabled) return
-        setUpdating(true)
-        setUpdateResult(null)
-        try {
-            const resp = await fetch("/api/system/update", { method: "POST" })
-            const data = await resp.json()
-            setUpdateResult(data)
-        } catch (err: any) {
-            setUpdateResult({ success: false, error: err.message })
-        } finally {
-            setUpdating(false)
-        }
-    }
-
-    async function handleSaveSettings(enabled: boolean, interval: number) {
-        setSavingSettings(true)
-        try {
-            const res = await fetch('/api/system/settings', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ autoUpdateEnabled: enabled, autoUpdateIntervalMinutes: interval })
-            })
-            const data = await res.json()
-            if (data.settings) {
-                setAutoUpdateEnabled(data.settings.autoUpdateEnabled)
-                setAutoUpdateInterval(data.settings.autoUpdateIntervalMinutes)
-            }
-        } catch (err) {
-            console.error(err)
-        } finally {
-            setSavingSettings(false)
-        }
-    }
-
-    if (loading) return (
-        <div className="min-h-screen bg-surface text-ink flex items-center justify-center">
-            <div className="text-lg text-dim">{t('common.loading')}...</div>
-        </div>
-    )
+    const skillUrl = typeof window !== 'undefined' ? `${window.location.origin}/skill` : ''
 
     const stats = [
         { label: t('dashboard.todo'), value: taskStats.planned, icon: <ListTodo className="w-5 h-5" />, color: 'text-dim', bg: 'bg-dim/10', border: 'border-dim/20' },
@@ -145,7 +53,7 @@ export default function DashboardPage() {
                     {stats.map(s => (
                         <div key={s.label} className={`${s.bg} border ${s.border} rounded-2xl p-4 md:p-5 flex flex-col items-center gap-2 backdrop-blur-xl`}>
                             <div className={s.color}>{s.icon}</div>
-                            <span className="text-2xl md:text-3xl font-extrabold text-ink">{loading ? '–' : s.value}</span>
+                            <span className="text-2xl md:text-3xl font-extrabold text-ink">{s.value}</span>
                             <span className={`text-[10px] md:text-xs font-medium uppercase tracking-wider ${s.color} text-center`}>{s.label}</span>
                         </div>
                     ))}
@@ -158,17 +66,17 @@ export default function DashboardPage() {
                             <Zap className="w-5 h-5 text-accent" />
                             <h2 className="text-sm font-bold uppercase tracking-wider text-dim">{t('dashboard.total_tasks')}</h2>
                         </div>
-                        <p className="text-4xl font-extrabold text-ink">{loading ? '–' : taskStats.total}</p>
+                        <p className="text-4xl font-extrabold text-ink">{taskStats.total}</p>
                     </div>
                     <div className="bg-panel border border-rim rounded-2xl p-6 backdrop-blur-xl">
                         <div className="flex items-center gap-3 mb-4">
                             <Bot className="w-5 h-5 text-accent" />
                             <h2 className="text-sm font-bold uppercase tracking-wider text-dim">{t('dashboard.agent_sessions')}</h2>
                         </div>
-                        <p className="text-4xl font-extrabold text-ink">{loading ? '–' : sessions.length}</p>
-                        {sessions.length > 0 && (
+                        <p className="text-4xl font-extrabold text-ink">{sessionList.length}</p>
+                        {sessionList.length > 0 && (
                             <div className="mt-3 space-y-1">
-                                {sessions.slice(0, 5).map(s => (
+                                {sessionList.slice(0, 5).map(s => (
                                     <div key={s.sessionKey} className="flex items-center justify-between text-xs">
                                         <span className="text-dim font-mono truncate max-w-[200px]">{s.sessionKey}</span>
                                         <span className={`px-2 py-0.5 rounded-full font-medium ${s.status === 'thinking' ? 'bg-info/20 text-info' : 'bg-ok/20 text-ok'}`}>{s.status}</span>
@@ -176,15 +84,18 @@ export default function DashboardPage() {
                                 ))}
                             </div>
                         )}
+                        {!connected && (
+                            <p className="mt-3 text-xs text-dim">Reconnecting…</p>
+                        )}
                     </div>
                 </div>
 
-                {/* Quick Install Section */}
+                {/* Quick Install */}
                 <div className="mb-10 text-center">
                     <h3 className="text-sm font-bold uppercase tracking-wider text-gray-500 mb-4">
                         {t('dashboard.quick_install_title')}
                     </h3>
-                    <div className="max-w-2xl mx-auto bg-indigo-500/5 border border-indigo-500/20 rounded-2xl p-6 backdrop-blur-xl relative overflow-hidden group">
+                    <div className="max-w-2xl mx-auto bg-indigo-500/5 border border-indigo-500/20 rounded-2xl p-6 backdrop-blur-xl relative overflow-hidden">
                         <div className="absolute top-0 left-0 w-1 h-full bg-indigo-500/40" />
                         <div className="flex flex-col md:flex-row items-center justify-between gap-6">
                             <div className="flex items-center gap-4 flex-1 text-left">
@@ -211,122 +122,6 @@ export default function DashboardPage() {
                                 {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
                                 {copied ? t('dashboard.copied') : t('dashboard.copy')}
                             </button>
-                        </div>
-                    </div>
-
-                    <div className="max-w-2xl mx-auto mt-4 bg-emerald-500/5 border border-emerald-500/20 rounded-2xl p-6 backdrop-blur-xl relative overflow-hidden group">
-                        <div className="absolute top-0 left-0 w-1 h-full bg-emerald-500/40" />
-                        <div className="flex flex-col md:flex-row items-center justify-between gap-6">
-                            <div className="flex items-center gap-4 flex-1 text-left">
-                                <div className="w-12 h-12 rounded-xl bg-emerald-500/10 flex items-center justify-center shrink-0 border border-emerald-500/20">
-                                    <Zap className="w-6 h-6 text-emerald-400" />
-                                </div>
-                                <div>
-                                    <p className="text-sm font-bold uppercase tracking-widest text-ok mb-1">
-                                        {t('dashboard.run_background_title')}
-                                    </p>
-                                    <p className="text-base md:text-lg font-medium text-ink font-mono break-all">
-                                        pm2 start npm --name OpenClwList -- run dev
-                                    </p>
-                                    <p className="text-[10px] md:text-xs text-mute mt-1 uppercase tracking-widest font-bold">
-                                        {t('dashboard.pm2_hint')}
-                                    </p>
-                                </div>
-                            </div>
-                            <button
-                                onClick={() => {
-                                    navigator.clipboard.writeText("pm2 start npm --name OpenClwList -- run dev")
-                                    setCopied(true)
-                                    setTimeout(() => setCopied(false), 2000)
-                                }}
-                                className={`flex items-center justify-center gap-2 px-6 py-3 rounded-xl font-bold transition-all shrink-0 w-full md:w-auto ${copied ? 'bg-green-500 text-white' : 'bg-emerald-500 hover:bg-emerald-400 text-white shadow-lg shadow-emerald-500/20'}`}
-                            >
-                                {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-                                {copied ? t('dashboard.copied') : t('dashboard.copy')}
-                            </button>
-                        </div>
-                    </div>
-
-                    {/* Check for Updates Section */}
-                    <div className="max-w-2xl mx-auto mt-4 bg-blue-500/5 border border-blue-500/20 rounded-2xl p-6 backdrop-blur-xl relative overflow-hidden group">
-                        <div className="absolute top-0 left-0 w-1 h-full bg-blue-500/40" />
-                        <div className="flex flex-col items-center gap-4">
-                            <div className="flex items-center justify-between w-full">
-                                <div className="flex items-center gap-4 text-left">
-                                    <div className="w-12 h-12 rounded-xl bg-info/10 flex items-center justify-center shrink-0 border border-info/20">
-                                        <Activity className={`w-6 h-6 text-info ${updating ? 'animate-pulse' : ''}`} />
-                                    </div>
-                                    <div>
-                                        <p className="text-sm font-bold uppercase tracking-widest text-info mb-1">
-                                            {t('app.version')}
-                                        </p>
-                                        <p className="text-dim text-sm">
-                                            {updating ? t('dashboard.update_running') : t('dashboard.update_check')}
-                                        </p>
-                                    </div>
-                                </div>
-                                <button
-                                    onClick={handleUpdate}
-                                    disabled={updating || (capabilities ? !capabilities.dangerousActionsEnabled : false)}
-                                    className={`flex items-center justify-center gap-2 px-6 py-3 rounded-xl font-bold transition-all shrink-0 w-full md:w-auto ${(updating || (capabilities ? !capabilities.dangerousActionsEnabled : false)) ? 'bg-gray-700 text-gray-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-500 text-white shadow-lg shadow-blue-500/20'}`}
-                                >
-                                    {updating ? <Clock className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
-                                    {updating ? t('dashboard.update_running') : t('dashboard.update_check')}
-                                </button>
-                            </div>
-
-                            {capabilities && (
-                                <div className={`w-full rounded-xl border px-4 py-3 text-xs text-left ${capabilities.dangerousActionsEnabled ? 'bg-emerald-500/5 border-emerald-500/20 text-emerald-400' : 'bg-amber-500/5 border-amber-500/20 text-amber-400'}`}>
-                                    <span className="font-semibold">
-                                        {capabilities.mode.toUpperCase()}
-                                    </span>
-                                    {activeHostId ? ` · host ${activeHostId}` : ''}
-                                    {' · '}
-                                    {capabilities.dangerousActionsEnabled ? 'dangerous actions enabled' : 'dangerous actions disabled by policy'}
-                                </div>
-                            )}
-
-                            {updateResult && (
-                                <div className={`w-full mt-4 p-4 rounded-xl border font-mono text-xs text-left overflow-auto max-h-48 ${updateResult.success ? 'bg-green-500/5 border-green-500/20 text-green-400' : 'bg-red-500/5 border-red-500/20 text-red-400'}`}>
-                                    <p className="font-bold mb-2">
-                                        {updateResult.success ? t('dashboard.update_success') : t('dashboard.update_error').replace('{error}', updateResult.error || '')}
-                                    </p>
-                                    {updateResult.output && (
-                                        <pre className="whitespace-pre-wrap opacity-80">{updateResult.output}</pre>
-                                    )}
-                                </div>
-                            )}
-
-                            <div className="w-full mt-2 pt-4 border-t border-blue-500/20 flex flex-col md:flex-row items-center justify-between gap-4">
-                                <div className="flex items-center gap-3">
-                                    <RefreshCw className="w-5 h-5 text-info" />
-                                    <div className="text-left">
-                                        <p className="text-sm font-bold text-ink">{t('dashboard.auto_update')}</p>
-                                        <p className="text-xs text-dim">{t('dashboard.auto_update_desc')}</p>
-                                    </div>
-                                </div>
-                                <div className="flex items-center gap-3">
-                                    <div className="flex items-center gap-2">
-                                        <input
-                                            type="number"
-                                            min="1"
-                                            value={autoUpdateInterval}
-                                            onChange={(e) => setAutoUpdateInterval(Number(e.target.value))}
-                                            onBlur={() => handleSaveSettings(autoUpdateEnabled, autoUpdateInterval)}
-                                            className="w-16 bg-panel border border-rim rounded-lg px-2 py-1 text-sm text-center outline-none focus:border-info/50 text-ink"
-                                            disabled={savingSettings}
-                                        />
-                                        <span className="text-xs text-dim">{t('dashboard.minutes')}</span>
-                                    </div>
-                                    <button
-                                        onClick={() => handleSaveSettings(!autoUpdateEnabled, autoUpdateInterval)}
-                                        disabled={savingSettings}
-                                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${autoUpdateEnabled ? 'bg-info' : 'bg-mute'}`}
-                                    >
-                                        <span className={`inline-block h-4 w-4 transform rounded-full bg-surface transition-transform ${autoUpdateEnabled ? 'translate-x-6' : 'translate-x-1'}`} />
-                                    </button>
-                                </div>
-                            </div>
                         </div>
                     </div>
                 </div>

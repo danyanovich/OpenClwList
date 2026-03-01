@@ -2,7 +2,8 @@ import "./globals.css"
 import type { Metadata } from "next"
 import { LanguageProvider } from "./i18n/context"
 import { Header } from "./components/Header"
-import { AuthGate } from "./components/AuthGate"
+import { GatewayProvider } from "./contexts/GatewayContext"
+import { GatewayGate } from "./components/ConnectionSetup"
 
 export const metadata: Metadata = {
     title: "OpenClwList",
@@ -27,10 +28,12 @@ export default function RootLayout({
             </head>
             <body className="antialiased bg-surface text-ink min-h-screen font-[Inter] pt-20">
                 <LanguageProvider>
-                    <AuthGate>
-                        <Header />
-                        {children}
-                    </AuthGate>
+                    <GatewayProvider>
+                        <GatewayGate>
+                            <Header />
+                            {children}
+                        </GatewayGate>
+                    </GatewayProvider>
                 </LanguageProvider>
             </body>
         </html>
