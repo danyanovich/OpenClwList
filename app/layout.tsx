@@ -4,11 +4,27 @@ import { LanguageProvider } from "./i18n/context"
 import { Header } from "./components/Header"
 import { GatewayProvider } from "./contexts/GatewayContext"
 import { GatewayGate } from "./components/ConnectionSetup"
+import { UpdateNotice } from "./components/UpdateNotice"
+import { readFileSync } from "fs"
+import { resolve } from "path"
+
+function getVersion(): string {
+  try {
+    const pkgPath = resolve(process.cwd(), "package.json")
+    const pkg = JSON.parse(readFileSync(pkgPath, "utf-8")) as { version?: string }
+    return pkg.version ?? "0.0.0"
+  } catch {
+    return "0.0.0"
+  }
+}
 
 export const metadata: Metadata = {
     title: "OpenClwList",
     description: "Operational monitor UI for OpenClaw Gateway",
     icons: { icon: "/favicon.png" },
+    other: {
+        "app-version": getVersion(),
+    },
 }
 
 export default function RootLayout({
@@ -32,6 +48,7 @@ export default function RootLayout({
                         <GatewayGate>
                             <Header />
                             {children}
+                            <UpdateNotice />
                         </GatewayGate>
                     </GatewayProvider>
                 </LanguageProvider>
