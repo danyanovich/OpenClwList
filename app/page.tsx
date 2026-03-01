@@ -323,6 +323,9 @@ export default function DashboardPage() {
                     <a href="/simulation" className="flex items-center justify-center gap-2 px-8 py-3.5 rounded-full bg-blue-600/10 hover:bg-blue-600/20 transition-all text-blue-500 font-semibold border border-blue-500/20 hover:scale-105">
                         <Activity className="w-5 h-5" /> {t('dashboard.simulation_hub') || 'Simulation Hub'} <ArrowRight className="w-4 h-4" />
                     </a>
+                    <button onClick={() => alert('LOL')} className="flex items-center justify-center gap-2 px-8 py-3.5 rounded-full bg-pink-500 hover:bg-pink-400 transition-all text-white font-semibold shadow-lg hover:scale-105">
+                        LOL
+                    </button>
                 </div>
             </div>
         </div>
