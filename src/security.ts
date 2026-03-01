@@ -18,7 +18,7 @@ function forbidden(res: Response): void {
   res.status(403).json({ ok: false, error: 'Forbidden by policy' })
 }
 
-function readBearerFromRequest(req: Request): string | undefined {
+export function readBearerFromRequest(req: Request): string | undefined {
   const header = req.header('authorization')
   if (header) {
     const [scheme, token] = header.split(/\s+/, 2)

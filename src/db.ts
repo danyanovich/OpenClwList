@@ -9,9 +9,22 @@ fs.mkdirSync(path.dirname(DB_PATH), { recursive: true })
 
 export const db = new DatabaseSync(DB_PATH)
 
+// Transaction helper: batches multiple writes in a single transaction for ~10x throughput
+export function runInTransaction(fn: () => void): void {
+  db.exec('BEGIN')
+  try {
+    fn()
+    db.exec('COMMIT')
+  } catch (error) {
+    db.exec('ROLLBACK')
+    throw error
+  }
+}
+
 db.exec(`
 PRAGMA journal_mode = WAL;
 PRAGMA synchronous = NORMAL;
+PRAGMA optimize;
 
 CREATE TABLE IF NOT EXISTS sessions (
   session_key TEXT PRIMARY KEY,
@@ -99,6 +112,16 @@ try {
   db.exec(`ALTER TABLE tasks ADD COLUMN topic TEXT;`)
 } catch {
   // Column may already exist
+}
+
+// --- Events TTL: auto-purge events older than 7 days ---
+const EVENTS_TTL_MS = 7 * 24 * 60 * 60 * 1000
+const purgeOldEventsStmt = db.prepare(`DELETE FROM events WHERE ts < ?`)
+
+export function purgeOldEvents(): number {
+  const cutoff = Date.now() - EVENTS_TTL_MS
+  const result = purgeOldEventsStmt.run(cutoff)
+  return Number(result.changes ?? 0)
 }
 
 const upsertSessionStmt = db.prepare(`

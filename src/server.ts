@@ -7,14 +7,12 @@ import { promisify } from 'node:util'
 import express from 'express'
 import next from 'next'
 import JSON5 from 'json5'
-import { createTask, deleteTask, getDistinctAgents, getGraph, getRecentEvents, getRunEvents, getRuns, getSessions, getTask, insertEvent, listTasks, updateAutoTaskStatusByRun, updateTaskFields, updateTaskSessionKey, updateTaskSourceRunId, updateTaskStatus, updateTaskTags, upsertAutoTaskForRun, upsertExec, upsertRun, upsertSession, getAnalytics, listSchedules, createSchedule, deleteSchedule, updateScheduleLastRun } from './db.js'
-import { createRequire } from 'module'
-const require = createRequire(import.meta.url)
-const cronParser = require('cron-parser')
+import { createTask, deleteTask, getDistinctAgents, getGraph, getRecentEvents, getRunEvents, getRuns, getSessions, getTask, insertEvent, listTasks, updateAutoTaskStatusByRun, updateTaskFields, updateTaskSessionKey, updateTaskSourceRunId, updateTaskStatus, updateTaskTags, upsertAutoTaskForRun, upsertExec, upsertRun, upsertSession, getAnalytics, listSchedules, createSchedule, deleteSchedule, updateScheduleLastRun, runInTransaction, purgeOldEvents } from './db.js'
+import { CronExpressionParser } from 'cron-parser'
 import { loadConfig } from './config.js'
 import { HostManager } from './host-manager.js'
 import { inferSessionFromListRow, parseGatewayEvent } from './parser.js'
-import { buildCapabilities, buildPolicyContext, createDangerousActionsMiddleware } from './security.js'
+import { buildCapabilities, buildPolicyContext, createDangerousActionsMiddleware, readBearerFromRequest } from './security.js'
 import type { Diagnostics, ParsedEnvelope, TaskStatus } from './types.js'
 
 const execAsync = promisify(exec)
@@ -69,13 +67,14 @@ app.use((req, res, next) => {
   next()
 })
 
-// Clean up rate limit map every 5 minutes
-setInterval(() => {
+// Combined housekeeping timer: rate-limit cleanup + auto-update check (every 60s)
+setInterval(async () => {
+  // --- Rate limit cleanup ---
   const now = Date.now()
   for (const [ip, entry] of rateLimitMap) {
     if (now > entry.resetAt) rateLimitMap.delete(ip)
   }
-}, 300_000)
+}, 60_000)
 
 type RuntimeDashboardAuth = {
   authEnabled?: boolean
@@ -131,23 +130,7 @@ function getDashboardAuthState(): DashboardAuthState {
   }
 }
 
-function getApiBearerFromRequest(req: express.Request): string | undefined {
-  const header = req.header('authorization')
-  if (header) {
-    const [scheme, token] = header.split(/\s+/, 2)
-    if (scheme?.toLowerCase() === 'bearer' && token) return token.trim()
-  }
-  if (typeof req.query.access_token === 'string' && req.query.access_token.trim()) {
-    return req.query.access_token.trim()
-  }
-  const cookieHeader = req.header('cookie')
-  if (cookieHeader) {
-    const parts = cookieHeader.split(';').map((p) => p.trim())
-    const tokenPart = parts.find((p) => p.startsWith('ops_ui_token='))
-    if (tokenPart) return decodeURIComponent(tokenPart.slice('ops_ui_token='.length))
-  }
-  return undefined
-}
+// Bearer token parsing is now in security.ts (readBearerFromRequest)
 
 function isBootstrapSetupOpen(): boolean {
   return getDashboardAuthState().source === 'bootstrap'
@@ -197,7 +180,7 @@ app.use('/api', (req, res, next) => {
     next()
     return
   }
-  const token = getApiBearerFromRequest(req)
+  const token = readBearerFromRequest(req)
   if (!token || token !== authState.bearerToken) {
     res.status(401).json({ ok: false, error: 'Unauthorized' })
     return
@@ -239,24 +222,32 @@ app.post('/api/system/update', requireDangerousActions, async (_req, res) => {
   }
 })
 
-// --- Settings API ---
+// --- Settings API (cached in memory) ---
 const SETTINGS_PATH = path.resolve(process.cwd(), 'data', 'settings.json')
+const DEFAULT_SETTINGS = { autoUpdateEnabled: false, autoUpdateIntervalMinutes: 60, lastUpdateAt: 0 }
+type SettingsType = typeof DEFAULT_SETTINGS & Record<string, unknown>
+let _settingsCache: SettingsType | null = null
 
-function getSettings() {
+function getSettings(): SettingsType {
+  if (_settingsCache) return _settingsCache
   if (!fs.existsSync(SETTINGS_PATH)) {
-    return { autoUpdateEnabled: false, autoUpdateIntervalMinutes: 60, lastUpdateAt: 0 }
+    _settingsCache = { ...DEFAULT_SETTINGS }
+    return _settingsCache
   }
   try {
-    return JSON.parse(fs.readFileSync(SETTINGS_PATH, 'utf8'))
+    _settingsCache = { ...DEFAULT_SETTINGS, ...JSON.parse(fs.readFileSync(SETTINGS_PATH, 'utf8')) }
+    return _settingsCache!
   } catch (e) {
-    return { autoUpdateEnabled: false, autoUpdateIntervalMinutes: 60, lastUpdateAt: 0 }
+    _settingsCache = { ...DEFAULT_SETTINGS }
+    return _settingsCache
   }
 }
 
-function saveSettings(settings: any) {
+function saveSettings(settings: SettingsType) {
   try {
     fs.mkdirSync(path.dirname(SETTINGS_PATH), { recursive: true })
     fs.writeFileSync(SETTINGS_PATH, JSON.stringify(settings, null, 2), 'utf8')
+    _settingsCache = settings
   } catch (e) {
     console.error('Failed to save settings:', e)
   }
@@ -282,7 +273,7 @@ app.post('/api/system/settings', (req, res) => {
   }
 })
 
-// Background loop for auto-updates
+// Background loop for auto-updates (merged into a less frequent check — every 5 min)
 setInterval(async () => {
   try {
     const settings = getSettings()
@@ -313,7 +304,7 @@ setInterval(async () => {
   } catch (e) {
     // ignore
   }
-}, 60000) // Check every minute
+}, 300_000) // Check every 5 minutes (reduced from 1 min)
 
 app.use(express.static(path.resolve(process.cwd(), 'public')))
 
@@ -652,6 +643,15 @@ function extractTextFromUnknownMessage(message: unknown): string {
   return ''
 }
 
+// Pre-compiled regex for deriveTaskTitleFromEvent (avoids re-compilation on hot path)
+const RE_NEWLINE = /\n/g
+const RE_WHITESPACE = /\s+/g
+const RE_NEWLINE_SPLIT = /\r?\n/
+const RE_HEADING_PREFIX = /^[#>*\-\d.\s]+/
+const RE_SENTENCE_SPLIT = /(?<=[.!?])\s+/
+const RE_FILLER_START = /^(ок|ok|готово|сделал|sure|yes|yeah|here is|here's|i have)\b[,.\- ]*/i
+const RE_PRONOUN_START = /^(я|i)\b[,.\- ]*/i
+
 function deriveTaskTitleFromEvent(parsed: ParsedEnvelope): { title: string, isUserPrompt: boolean } {
   const sessionKey = parsed.run?.sessionKey || parsed.session?.sessionKey || 'unknown'
   const payload = parsed.event?.payload as {
@@ -677,10 +677,10 @@ function deriveTaskTitleFromEvent(parsed: ParsedEnvelope): { title: string, isUs
       if (typeof rawArgs === 'string') {
         const parsedArgs = JSON.parse(rawArgs)
         const firstVal = Object.values(parsedArgs).find(v => typeof v === 'string' && v.trim().length > 0)
-        if (typeof firstVal === 'string') argStr = `: "${firstVal.substring(0, 40).replace(/\n/g, ' ')}${firstVal.length > 40 ? '...' : ''}"`
+        if (typeof firstVal === 'string') argStr = `: "${firstVal.substring(0, 40).replace(RE_NEWLINE, ' ')}${firstVal.length > 40 ? '...' : ''}"`
       } else if (typeof rawArgs === 'object') {
         const firstVal = Object.values(rawArgs).find(v => typeof v === 'string' && v.trim().length > 0)
-        if (typeof firstVal === 'string') argStr = `: "${firstVal.substring(0, 40).replace(/\n/g, ' ')}${firstVal.length > 40 ? '...' : ''}"`
+        if (typeof firstVal === 'string') argStr = `: "${firstVal.substring(0, 40).replace(RE_NEWLINE, ' ')}${firstVal.length > 40 ? '...' : ''}"`
       }
     } catch { }
     return { title: `Action: ${toolName}${argStr}`, isUserPrompt: false }
@@ -691,22 +691,19 @@ function deriveTaskTitleFromEvent(parsed: ParsedEnvelope): { title: string, isUs
   const fromInput = extractTextFromUnknownMessage(payload?.input)
   const fromPrompt = extractTextFromUnknownMessage(payload?.prompt)
   const fromQuery = extractTextFromUnknownMessage(payload?.query)
-  const raw = (fromMessage || fromData || fromInput || fromPrompt || fromQuery).replace(/\s+/g, ' ').trim()
-  const firstLine = raw.split(/\r?\n/).map((line) => line.trim()).find((line) => line.length > 0) || ''
+  const raw = (fromMessage || fromData || fromInput || fromPrompt || fromQuery).replace(RE_WHITESPACE, ' ').trim()
+  const firstLine = raw.split(RE_NEWLINE_SPLIT).map((line) => line.trim()).find((line) => line.length > 0) || ''
   const cleaned = (firstLine || raw)
-    .replace(/^[#>*\-\d.\s]+/, '')
-    .replace(/\s+/g, ' ')
+    .replace(RE_HEADING_PREFIX, '')
+    .replace(RE_WHITESPACE, ' ')
     .trim()
-  const firstSentence = cleaned.split(/(?<=[.!?])\s+/)[0] || cleaned
+  const firstSentence = cleaned.split(RE_SENTENCE_SPLIT)[0] || cleaned
   const preferred = firstSentence.length >= 12 ? firstSentence : cleaned
   let snippet = preferred.length > 0 ? preferred.slice(0, 120) : ''
 
   if (snippet && !isUserPrompt) {
-    // Strip common filler from the start of agent messages
-    snippet = snippet.replace(/^(ок|ok|готово|сделал|sure|yes|yeah|here is|here's|i have)\b[,.\- ]*/i, '').trim()
-    // Strip starting "я " or "i "
-    snippet = snippet.replace(/^(я|i)\b[,.\- ]*/i, '').trim()
-    // Capitalize first letter
+    snippet = snippet.replace(RE_FILLER_START, '').trim()
+    snippet = snippet.replace(RE_PRONOUN_START, '').trim()
     if (snippet.length > 0) {
       snippet = snippet.charAt(0).toUpperCase() + snippet.slice(1)
     }
@@ -722,57 +719,72 @@ function deriveTaskDescription(parsed: ParsedEnvelope): string {
   return `Auto-created from OpenClaw run ${runId} in session ${sessionKey}.`
 }
 
+const BATCH_SIZE = 50
+
 async function processQueueLoop(): Promise<void> {
   if (isProcessing) return
   isProcessing = true
   try {
     while (processQueue.length > 0) {
-      const current = processQueue.shift()!
-      gateway.setQueuedEvents(processQueue.length)
-      const lastSeq = lastSeqByEvent.get(current.event)
-      if (typeof current.seq === 'number' && typeof lastSeq === 'number' && current.seq > lastSeq + 1) {
-        gateway.incrementStreamGaps()
-        runtimeDiagnostics.streamGaps += 1
-        broadcastSse({
-          type: 'diagnostic',
-          level: 'warn',
-          code: 'stream_gap',
-          event: current.event,
-          expected: lastSeq + 1,
-          received: current.seq,
-          ts: Date.now(),
-        })
-      }
-      if (typeof current.seq === 'number') {
-        lastSeqByEvent.set(current.event, current.seq)
-      }
+      // Process events in batches wrapped in a single SQLite transaction
+      const batchCount = Math.min(processQueue.length, BATCH_SIZE)
+      const sseBroadcasts: Array<Record<string, unknown>> = []
 
-      try {
-        const parsed = parseGatewayEvent(current.event, current.payload, current.seq)
-        if (!parsed) continue
-        persistParsed(parsed)
+      runInTransaction(() => {
+        for (let i = 0; i < batchCount && processQueue.length > 0; i++) {
+          const current = processQueue.shift()!
+          gateway.setQueuedEvents(processQueue.length)
+          const lastSeq = lastSeqByEvent.get(current.event)
+          if (typeof current.seq === 'number' && typeof lastSeq === 'number' && current.seq > lastSeq + 1) {
+            gateway.incrementStreamGaps()
+            runtimeDiagnostics.streamGaps += 1
+            sseBroadcasts.push({
+              type: 'diagnostic',
+              level: 'warn',
+              code: 'stream_gap',
+              event: current.event,
+              expected: lastSeq + 1,
+              received: current.seq,
+              ts: Date.now(),
+            })
+          }
+          if (typeof current.seq === 'number') {
+            lastSeqByEvent.set(current.event, current.seq)
+          }
 
-        const pushed: Record<string, unknown> = {
-          type: 'monitor_update',
-          ts: Date.now(),
+          try {
+            const parsed = parseGatewayEvent(current.event, current.payload, current.seq)
+            if (!parsed) continue
+            persistParsed(parsed)
+
+            const pushed: Record<string, unknown> = {
+              type: 'monitor_update',
+              ts: Date.now(),
+            }
+            if (parsed.session?.sessionKey) pushed.sessionKey = parsed.session.sessionKey
+            if (parsed.run?.runId) pushed.runId = parsed.run.runId
+            if (parsed.event?.eventId) pushed.eventId = parsed.event.eventId
+            if (parsed.exec?.execId) pushed.execId = parsed.exec.execId
+            sseBroadcasts.push(pushed)
+          } catch (error) {
+            gateway.incrementParserErrors()
+            runtimeDiagnostics.parserErrors += 1
+            runtimeDiagnostics.lastError = error instanceof Error ? error.message : String(error)
+            sseBroadcasts.push({
+              type: 'diagnostic',
+              level: 'error',
+              code: 'parser_error',
+              message: runtimeDiagnostics.lastError,
+              event: current.event,
+              ts: Date.now(),
+            })
+          }
         }
-        if (parsed.session?.sessionKey) pushed.sessionKey = parsed.session.sessionKey
-        if (parsed.run?.runId) pushed.runId = parsed.run.runId
-        if (parsed.event?.eventId) pushed.eventId = parsed.event.eventId
-        if (parsed.exec?.execId) pushed.execId = parsed.exec.execId
-        broadcastSse(pushed)
-      } catch (error) {
-        gateway.incrementParserErrors()
-        runtimeDiagnostics.parserErrors += 1
-        runtimeDiagnostics.lastError = error instanceof Error ? error.message : String(error)
-        broadcastSse({
-          type: 'diagnostic',
-          level: 'error',
-          code: 'parser_error',
-          message: runtimeDiagnostics.lastError,
-          event: current.event,
-          ts: Date.now(),
-        })
+      })
+
+      // Broadcast SSE outside the transaction
+      for (const msg of sseBroadcasts) {
+        broadcastSse(msg)
       }
     }
   } finally {
@@ -825,14 +837,28 @@ const OPENCLAW_SUBAGENTS_PATH = path.join(os.homedir(), '.openclaw', 'subagents'
 const OPENCLAW_AGENTS_DIR = path.join(os.homedir(), '.openclaw', 'agents')
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
+let _openClawConfigCache: { data: any; ts: number } | null = null
+const OPENCLAW_CONFIG_CACHE_TTL = 30_000 // 30 seconds TTL
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function getOpenClawConfig(): any {
-  if (!fs.existsSync(OPENCLAW_CONFIG_PATH)) return {}
-  return JSON5.parse(fs.readFileSync(OPENCLAW_CONFIG_PATH, 'utf8'))
+  const now = Date.now()
+  if (_openClawConfigCache && (now - _openClawConfigCache.ts) < OPENCLAW_CONFIG_CACHE_TTL) {
+    return _openClawConfigCache.data
+  }
+  if (!fs.existsSync(OPENCLAW_CONFIG_PATH)) {
+    _openClawConfigCache = { data: {}, ts: now }
+    return {}
+  }
+  const data = JSON5.parse(fs.readFileSync(OPENCLAW_CONFIG_PATH, 'utf8'))
+  _openClawConfigCache = { data, ts: now }
+  return data
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function saveOpenClawConfig(config: any): void {
   fs.writeFileSync(OPENCLAW_CONFIG_PATH, JSON.stringify(config, null, 2), 'utf8')
+  _openClawConfigCache = { data: config, ts: Date.now() }
 }
 
 // Discover agents from filesystem (fallback for agents not listed in config)
@@ -1287,6 +1313,40 @@ app.get('/api/tasks', (_req, res) => {
   res.json({ tasks, count: tasks.length })
 })
 
+// Unified dashboard summary — replaces 5 separate fetches with 1
+app.get('/api/dashboard/summary', (_req, res) => {
+  try {
+    const tasks = listTasks(1000)
+    const sessions = getSessions({})
+    const settings = getSettings()
+    const authState = getDashboardAuthState()
+    const hostsData = hostManager.listHosts()
+    const taskStats = {
+      planned: tasks.filter(t => t.status === 'planned').length,
+      in_progress: tasks.filter(t => t.status === 'in_progress').length,
+      review: tasks.filter(t => t.status === 'review').length,
+      done: tasks.filter(t => t.status === 'done').length,
+      total: tasks.length,
+    }
+    res.json({
+      ok: true,
+      taskStats,
+      sessions: sessions.map(s => ({ sessionKey: s.sessionKey, status: s.status })),
+      settings,
+      capabilities: buildCapabilities({
+        mode: config.mode,
+        authEnabled: authState.authEnabled,
+        dangerousActionsEnabled: config.dangerousActionsEnabled,
+        defaultHostId: config.defaultHostId,
+        multiHost: config.hosts.length > 1,
+      }),
+      activeHostId: hostManager.getActiveHostId(),
+    })
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err instanceof Error ? err.message : String(err) })
+  }
+})
+
 app.post('/api/tasks/:id/status', (req, res) => {
   const body = (req.body && typeof req.body === 'object' ? req.body : {}) as { status?: string, sessionKey?: string }
   const status = body.status || ''
@@ -1554,7 +1614,7 @@ app.post('/api/schedules', (req, res) => {
     return
   }
   try {
-    cronParser.parseExpression(cronExpr)
+    CronExpressionParser.parse(cronExpr)
     const id = `sched:${randomUUID()}`
     createSchedule({ id, cronExpr, sessionKey, prompt })
     res.json({ ok: true, id })
@@ -1626,7 +1686,24 @@ nextApp.prepare().then(() => {
           runtimeDiagnostics.lastError = error instanceof Error ? error.message : String(error)
         })
       }
-    }, 30_000)
+    }, 120_000) // Increased from 30s to 120s — live events already provide real-time data via WebSocket
+
+    // Periodic events cleanup: purge events older than 7 days (every 6 hours)
+    setInterval(() => {
+      try {
+        const purged = purgeOldEvents()
+        if (purged > 0) console.log(`[ops-ui] purged ${purged} old events`)
+      } catch (e) {
+        console.error('[ops-ui] events purge error:', e)
+      }
+    }, 6 * 60 * 60 * 1000)
+    // Run initial purge on startup
+    try {
+      const purged = purgeOldEvents()
+      if (purged > 0) console.log(`[ops-ui] startup purge: removed ${purged} old events`)
+    } catch (e) {
+      console.error('[ops-ui] startup purge error:', e)
+    }
 
     setInterval(() => {
       try {
@@ -1638,7 +1715,7 @@ nextApp.prepare().then(() => {
             continue
           }
           try {
-            const interval = cronParser.parseExpression(sched.cronExpr, { currentDate: new Date(sched.lastRunAt) })
+            const interval = CronExpressionParser.parse(sched.cronExpr, { currentDate: new Date(sched.lastRunAt) })
             const nextTarget = interval.next().getTime()
             if (now >= nextTarget) {
               updateScheduleLastRun(sched.id, now)
