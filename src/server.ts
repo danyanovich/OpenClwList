@@ -17,7 +17,7 @@ import type { Diagnostics, ParsedEnvelope, TaskStatus } from './types.js'
 
 const execAsync = promisify(exec)
 
-const config = loadConfig()
+let config = loadConfig()
 const PORT = config.port
 const HOST = config.host
 const MAX_QUEUE = Number(process.env.OPS_UI_MAX_QUEUE || 5000)
@@ -150,8 +150,9 @@ app.get('/health', (_req, res) => {
     bootstrapSetupRequired: isBootstrapSetupOpen(),
   })
 })
+
 const requireDangerousActions = createDangerousActionsMiddleware({
-  dangerousActionsEnabled: config.dangerousActionsEnabled,
+  get dangerousActionsEnabled() { return config.dangerousActionsEnabled },
 })
 
 app.get('/api/setup/bootstrap-status', (_req, res) => {
@@ -224,7 +225,7 @@ app.post('/api/system/update', requireDangerousActions, async (_req, res) => {
 
 // --- Settings API (cached in memory) ---
 const SETTINGS_PATH = path.resolve(process.cwd(), 'data', 'settings.json')
-const DEFAULT_SETTINGS = { autoUpdateEnabled: false, autoUpdateIntervalMinutes: 60, lastUpdateAt: 0 }
+const DEFAULT_SETTINGS = { uiMode: '', autoUpdateEnabled: false, autoUpdateIntervalMinutes: 60, lastUpdateAt: 0 }
 type SettingsType = typeof DEFAULT_SETTINGS & Record<string, unknown>
 let _settingsCache: SettingsType | null = null
 
@@ -272,6 +273,28 @@ app.post('/api/system/settings', (req, res) => {
     res.status(500).json({ ok: false, error: error.message })
   }
 })
+
+app.post('/api/system/mode', (req, res) => {
+  try {
+    const body = req.body || {}
+    const targetMode = body.mode === 'remote' ? 'remote' : 'local'
+
+    // Save to settings
+    const current = getSettings()
+    const updated = { ...current, uiMode: targetMode }
+    saveSettings(updated)
+
+    // Reload global config
+    config = loadConfig()
+
+    // Also re-apply dangerous actions check context with new config
+
+    res.json({ ok: true, mode: config.mode })
+  } catch (error: any) {
+    res.status(500).json({ ok: false, error: error.message })
+  }
+})
+
 
 // Background loop for auto-updates (merged into a less frequent check — every 5 min)
 setInterval(async () => {

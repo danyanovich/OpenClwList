@@ -25,6 +25,7 @@ export function Header() {
     const [activeHostId, setActiveHostId] = useState<string>("")
     const [hosts, setHosts] = useState<Array<{ id: string; name: string; connected?: boolean }>>([])
     const [switchingHost, setSwitchingHost] = useState(false)
+    const [switchingMode, setSwitchingMode] = useState(false)
 
     useEffect(() => {
         let es: EventSource
@@ -99,6 +100,27 @@ export function Header() {
         window.location.reload()
     }
 
+    async function handleModeToggle() {
+        if (!capabilities || switchingMode) return
+        setSwitchingMode(true)
+        const targetMode = capabilities.mode === 'local' ? 'remote' : 'local'
+        try {
+            const res = await fetch('/api/system/mode', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ mode: targetMode }),
+            })
+            if (!res.ok) throw new Error('Failed to toggle mode')
+
+            // if switching to remote, we'll likely need a token check, so clear local token if they intend to enter a new one? 
+            // no, keep token but if invalid AuthGate handles it.
+            window.location.reload()
+        } catch (error) {
+            console.error(error)
+            setSwitchingMode(false)
+        }
+    }
+
     return (
         <header className="fixed top-0 left-0 right-0 z-50 px-6 py-4 flex items-center justify-between backdrop-blur-md bg-surface/70 border-b border-rim">
             <Link href="/" className="flex items-center gap-2 group">
@@ -110,8 +132,8 @@ export function Header() {
 
             <div className="flex items-center gap-4">
                 <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs font-bold transition-all duration-300 ${connected
-                        ? 'bg-ok-dim border-ok/20 text-ok'
-                        : 'bg-err-dim border-err/20 text-err animate-pulse'
+                    ? 'bg-ok-dim border-ok/20 text-ok'
+                    : 'bg-err-dim border-err/20 text-err animate-pulse'
                     }`}>
                     {connected ? <Wifi className="w-3.5 h-3.5" /> : <WifiOff className="w-3.5 h-3.5" />}
                     <span className="hidden sm:inline">
@@ -138,13 +160,17 @@ export function Header() {
                                 </select>
                             </div>
                         )}
-                        <div className={`hidden md:flex items-center gap-2 px-3 py-1.5 rounded-full border text-[11px] font-bold ${capabilities.mode === 'remote'
+                        <button
+                            onClick={handleModeToggle}
+                            disabled={switchingMode}
+                            title={`Click to switch to ${capabilities.mode === 'local' ? 'REMOTE' : 'LOCAL'}`}
+                            className={`hidden md:flex items-center gap-2 px-3 py-1.5 rounded-full border text-[11px] font-bold transition-all hover:opacity-80 disabled:opacity-50 ${capabilities.mode === 'remote'
                                 ? 'bg-blue-500/10 border-blue-500/20 text-blue-400'
                                 : 'bg-dim/10 border-dim/20 text-dim'
-                            }`}>
-                            <span>{capabilities.mode.toUpperCase()}</span>
+                                }`}>
+                            <span>{switchingMode ? '...' : capabilities.mode.toUpperCase()}</span>
                             {activeHostId && <span className="opacity-70">· {activeHostId}</span>}
-                        </div>
+                        </button>
                         {!capabilities.dangerousActionsEnabled && (
                             <div className="hidden lg:flex items-center gap-2 px-3 py-1.5 rounded-full border text-[11px] font-bold bg-amber-500/10 border-amber-500/20 text-amber-400">
                                 <span>READ-MOSTLY</span>

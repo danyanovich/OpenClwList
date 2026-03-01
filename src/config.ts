@@ -129,14 +129,38 @@ export function loadConfig(env: Env = process.env): OpsConfig {
   if (!Number.isFinite(port) || port <= 0) {
     throw new Error(`Invalid port: ${env.OPS_UI_PORT || env.PORT}`)
   }
+
+  // Check for runtime settings mode override
+  let dynamicMode = mode
+  let dynamicAuthEnabled = authEnabled
+  let dynamicDangerous = dangerousActionsEnabled
+
+  try {
+    const settingsPath = path.resolve(process.cwd(), 'data', 'settings.json')
+    if (fs.existsSync(settingsPath)) {
+      const settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'))
+      if (settings.uiMode === 'remote') {
+        dynamicMode = 'remote'
+        dynamicAuthEnabled = true // Enforce auth in remote mode
+        dynamicDangerous = remoteAllowDangerous
+      } else if (settings.uiMode === 'local') {
+        dynamicMode = 'local'
+        dynamicAuthEnabled = false // Relax auth in local mode
+        dynamicDangerous = true
+      }
+    }
+  } catch (err) {
+    console.warn('[ops-ui] failed to read runtime mode from settings:', err instanceof Error ? err.message : String(err))
+  }
+
   return {
-    mode,
+    mode: dynamicMode,
     host,
     port,
     trustProxy,
-    authEnabled,
+    authEnabled: dynamicAuthEnabled,
     bearerToken,
-    dangerousActionsEnabled,
+    dangerousActionsEnabled: dynamicDangerous,
     defaultHostId,
     hosts,
   }
