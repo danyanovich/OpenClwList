@@ -126,14 +126,14 @@ function getDashboardAuthState(): DashboardAuthState {
   return {
     authEnabled: false,
     bearerToken: undefined,
-    source: 'bootstrap',
+    source: 'bootstrap', // Legacy, kept for typing but we'll bypass the screen
   }
 }
 
 // Bearer token parsing is now in security.ts (readBearerFromRequest)
 
 function isBootstrapSetupOpen(): boolean {
-  return getDashboardAuthState().source === 'bootstrap'
+  return false // Disabled: We no longer use the complex setup screen
 }
 
 function isLoopbackRequest(req: express.Request): boolean {
@@ -159,7 +159,7 @@ app.get('/api/setup/bootstrap-status', (_req, res) => {
   const authState = getDashboardAuthState()
   res.json({
     ok: true,
-    bootstrapRequired: authState.source === 'bootstrap',
+    bootstrapRequired: false, // Disabled full setup screen
     mode: config.mode,
     authConfigured: authState.source !== 'bootstrap',
     dangerousActionsEnabled: config.dangerousActionsEnabled,
